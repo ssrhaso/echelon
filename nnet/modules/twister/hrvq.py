@@ -90,8 +90,23 @@ class VectorQuantizerEMA(nn.Module):
         self, 
         z_flat: torch.Tensor
     ) -> int:
+        """ Replace Dead Codebook entries with random encoder outputs """
         
-        pass
+        if self.update_count % self.revival_interval != 0:
+            return 0
+
+        # IF DEAD (usage < threshold)
+        dead_mask = self.ema_cluster_size < self.revival_threshold
+        num_dead = dead_mask.sum().item()
+        
+        if num_dead > 0:
+            # SAMPLE random encoder outputs as replacements
+            rand_indices = torch.randint(0, z_flat.shape[0], (num_dead,), device=z_flat.device)
+            self.embedding[dead_mask] = z_flat[rand_indices].detach()
+            self.ema_cluster_size[dead_mask] = self.revival_threshold
+            self.ema_embedding_sum[dead_mask] = self.embedding[dead_mask] * self.revival_threshold
+            
+        return num_dead
 
     def forward(
         self, 
