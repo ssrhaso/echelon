@@ -9,3 +9,5 @@ wandb/*
 env_twister/*
 
 venv/
+
+boilerplate/

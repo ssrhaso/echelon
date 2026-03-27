@@ -1,5 +1,4 @@
 # Copyright 2025, Maxime Burchi.
-# Copyright 2025, Hasaan Ahmad.  # ECHELON modifications
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,22 +21,21 @@ from nnet import modules
 from nnet import distributions
 from nnet import structs
 
-
 class TSSM(nn.Module):
 
     def __init__(
-            self,
+            self, 
             num_actions,
-            stoch_size=32,
+            stoch_size=32, 
             act_fun=nn.SiLU,
-            discrete=32,
-            learn_initial=True,
-            weight_init="dreamerv3_normal",
-            bias_init="zeros",
-            norm={"class": "LayerNorm", "params": {"eps": 1e-3}},
-            uniform_mix=0.01,
-            action_clip=1.0,
-            dist_weight_init="xavier_uniform",
+            discrete=32, 
+            learn_initial=True, 
+            weight_init="dreamerv3_normal", 
+            bias_init="zeros", 
+            norm={"class": "LayerNorm", "params": {"eps": 1e-3}}, 
+            uniform_mix=0.01, 
+            action_clip=1.0, 
+            dist_weight_init="xavier_uniform", 
             dist_bias_init="zeros",
 
             # Transformer
@@ -48,11 +46,6 @@ class TSSM(nn.Module):
             drop_rate=0.1,
             att_context_left=64,
             module_pre_norm=False,
-
-            # ECHELON: new params for hierarchical dynamics
-            num_codes: list = None,
-            hrvq: nn.Module = None,
-            cond_proj_dim: int = 128,
         ):
         super(TSSM, self).__init__()
 
@@ -79,20 +72,9 @@ class TSSM(nn.Module):
         self.att_context_left = att_context_left
         self.max_pos_encoding = 2048
 
-        # ECHELON: HRVQ config
-        if num_codes is None:
-            num_codes = [512, 512, 512]
-        self.num_codes = num_codes
-        self.cond_proj_dim = cond_proj_dim
-
-        # ECHELON: stored reference to encoder's HRVQ — NOT a child module (already owned by encoder)
-        # Used for codebook lookups during imagination (indices -> embeddings)
-        self._hrvq_ref = hrvq  # type: HRVQ | None
-
         # zt + at -> Linear -> Norm -> Act -> Linear -> Norm -> et
-        # UNCHANGED: input dim = stoch_size*discrete + num_actions = 1024 + A
         self.action_mixer = modules.MultiLayerPerceptron(
-            dim_input=self.stoch_size * self.discrete + self.num_actions if self.discrete else self.stoch_size + self.num_actions,
+            dim_input=self.stoch_size * self.discrete + self.num_actions if self.discrete else self.stoch_size + self.num_actions, 
             dim_layers=[self.hidden_size, self.hidden_size],
             act_fun=[self.act_fun, None],
             weight_init=weight_init,
@@ -102,18 +84,17 @@ class TSSM(nn.Module):
         )
 
         # Transformer et -> dt, ht
-        # UNCHANGED
         self.transformer = modules.TransformerNetwork(
             dim_model=self.hidden_size,
             num_blocks=self.num_blocks,
             att_params={
                 "class": "RelPosMultiHeadSelfAttention",
                 "params": {
-                    "num_heads": self.num_heads,
-                    "weight_init": "default",
-                    "bias_init": "default",
-                    "attn_drop_rate": self.drop_rate,
-                    "max_pos_encoding": self.max_pos_encoding,
+                    "num_heads": self.num_heads, 
+                    "weight_init": "default", 
+                    "bias_init": "default", 
+                    "attn_drop_rate": self.drop_rate, 
+                    "max_pos_encoding": self.max_pos_encoding, 
                     "causal": True
                 }
             },
@@ -122,102 +103,57 @@ class TSSM(nn.Module):
             pos_embedding=None,
             mask=None,
             ff_ratio=self.ff_ratio,
-            weight_init="default",
+            weight_init="default", 
             bias_init="default",
             act_fun="ReLU",
             module_pre_norm=module_pre_norm
         )
 
-        # ECHELON: killed — self.dynamics_predictor (single Linear(hidden_size -> discrete*stoch_size))
-        # Replaced by per-level dynamics heads with hierarchical conditioning
-
-        # ECHELON: L0 head — predicts codebook indices for level 0 from transformer deter
-        self.dynamics_head_l0 = None  # ECHELON: nn.Linear(hidden_size, num_codes[0]), (512 -> 512)
-
-        # ECHELON: L0 conditioning projection — projects z_q0 (1024-dim) for conditioning L1
-        self.l0_cond_proj = None  # ECHELON: nn.Linear(stoch_size * discrete, cond_proj_dim), (1024 -> 128)
-
-        # ECHELON: L1 head — conditioned on deter + projected z_q0
-        self.dynamics_head_l1 = None  # ECHELON: nn.Linear(hidden_size + cond_proj_dim, num_codes[1]), (640 -> 512)
-
-        # ECHELON: L1 conditioning projection — projects z_q1 (1024-dim) for conditioning L2
-        self.l1_cond_proj = None  # ECHELON: nn.Linear(stoch_size * discrete, cond_proj_dim), (1024 -> 128)
-
-        # ECHELON: L2 head — conditioned on deter + projected z_q0 + projected z_q1
-        self.dynamics_head_l2 = None  # ECHELON: nn.Linear(hidden_size + 2 * cond_proj_dim, num_codes[2]), (768 -> 512)
+        # Dynamics Predictor dt -> zt
+        self.dynamics_predictor = modules.Linear(
+            in_features=self.hidden_size, 
+            out_features=self.discrete * self.stoch_size if self.discrete else 2 * self.stoch_size,
+            weight_init=self.dist_weight_init,
+            bias_init=self.dist_bias_init
+        )
 
         if self.learn_initial:
             self.weight_init = nn.Parameter(torch.zeros(self.hidden_size))
 
-    def _predict_hierarchical(self, deter, sample=True):
-        """Core hierarchical prediction: L0 from deter, L1|L0, L2|L0+L1.
-
-        Cascade: predict L0 indices from deter, look up z_q0 from HRVQ codebook,
-        project and concatenate to predict L1, then L2. Sum z_q levels and reshape.
-
-        Args:
-            deter: (*, 512) transformer deterministic hidden state
-            sample: if True, sample from categorical; if False, take argmax (mode)
-        Returns:
-            stoch: (*, 32, 32) — reshaped sum of quantized vectors (1024 -> 32x32)
-            logits_l0: (*, num_codes[0]) — raw logits for level 0
-            logits_l1: (*, num_codes[1]) — raw logits for level 1
-            logits_l2: (*, num_codes[2]) — raw logits for level 2
-        """
-        raise NotImplementedError("ECHELON: hierarchical cascade prediction L0->L1->L2")
-
     def get_stoch(self, deter):
-        """Predict hierarchical codebook indices from deter, look up, sum, reshape.
+        
+        # Linear Logits
+        logits = self.dynamics_predictor(deter).reshape(deter.shape[:-1] + (self.stoch_size, self.discrete))
+        dist_params = {'logits': logits}
+    
+        # Get Mode
+        stoch = self.get_dist(dist_params).mode()
 
-        Replaces the original dynamics_predictor + OneHotDist.mode() path.
-
-        Args:
-            deter: (*, hidden_size=512) transformer deterministic state
-        Returns:
-            stoch: (*, 32, 32) — summed and reshaped quantized vector (mode, not sampled)
-        """
-        raise NotImplementedError("ECHELON: get_stoch via _predict_hierarchical(deter, sample=False)")
+        return stoch
 
     def initial(self, batch_size=1, seq_length=1, dtype=torch.float32, device="cpu", detach_learned=False):
-        """Create initial state dict for TSSM.
 
-        ECHELON changes:
-        - stoch: still zeros (B, seq_len, 32, 32)
-        - REMOVED: "logits" key
-        - ADDED: "logits_l0" zeros (B, seq_len, num_codes[0])
-        - ADDED: "logits_l1" zeros (B, seq_len, num_codes[1])
-        - ADDED: "logits_l2" zeros (B, seq_len, num_codes[2])
-        - learn_initial: deter -> get_stoch(deter) still works (get_stoch now uses hierarchical prediction)
+        initial_state = structs.AttrDict(
+            logits=torch.zeros(batch_size, seq_length, self.stoch_size, self.discrete, dtype=dtype, device=device),
+            stoch=torch.zeros(batch_size, seq_length, self.stoch_size, self.discrete, dtype=dtype, device=device),
+            deter=torch.zeros(batch_size, seq_length, self.hidden_size, dtype=dtype, device=device),
+            hidden=None
+        )
 
-        Args:
-            batch_size: int
-            seq_length: int
-            dtype: torch.dtype
-            device: str or torch.device
-            detach_learned: bool — if True, detach learned initial state
-        Returns:
-            AttrDict with keys: stoch, logits_l0, logits_l1, logits_l2, deter, hidden
-        """
-        raise NotImplementedError("ECHELON: initial state with per-level logits instead of flat logits")
+        # Learned Initial
+        if self.learn_initial:
+            initial_state.deter = self.weight_init.repeat(batch_size, seq_length, 1)
+            initial_state.stoch = self.get_stoch(initial_state.deter) 
+
+            # Detach Learned
+            if detach_learned:
+                initial_state.deter = initial_state.deter.detach()
+                initial_state.stoch = initial_state.stoch.detach()
+
+        return initial_state
 
     def observe(self, states, prev_actions, is_firsts, prev_state=None, is_firsts_hidden=None, return_blocks_deter=False):
-        """UNCHANGED from TWISTER. Operates on filtered {"stoch"} dict from WorldModel.
 
-        The encoder output is split by WorldModel.forward BEFORE calling this method:
-            tssm_states = {"stoch": encoder_out["stoch"]}  # only what TSSM expects
-        So observe() never sees hrvq_info, indices, or vq_loss.
-
-        Args:
-            states: dict with "stoch" (B, L, 32, 32)
-            prev_actions: (B, L, A) one-hot or continuous actions
-            is_firsts: (B, L) episode boundary flags
-            prev_state: optional dict from previous call
-            is_firsts_hidden: optional (B, C) hidden is_firsts mask
-            return_blocks_deter: bool
-        Returns:
-            posts: dict — posterior states (with encoder stoch + transformer deter)
-            priors: dict — prior states (with predicted stoch from dynamics heads)
-        """
 
         # Create prev_states (B, L-1, ...)
         prev_states = {key: value[:, :-1] for key, value in states.items()}
@@ -238,122 +174,184 @@ class TSSM(nn.Module):
         return posts, priors
 
     def imagine(self, p_net, prev_state, img_steps=1, is_firsts=None, is_firsts_hidden=None, actions=None):
-        """Run imagination rollout using policy network.
 
-        ECHELON changes:
-        - img_states keys: replace "logits" with "logits_l0", "logits_l1", "logits_l2"
-        - forward_img now returns per-level logits
+        # Policy
+        policy = lambda s: p_net(self.get_feat(s).detach()).rsample()
+        
+        # Current state action
+        if actions is None:
+            prev_state["action"] = policy(prev_state)
+        else:
+            assert actions.shape[1] == img_steps
+            prev_state["action"] = actions[:, :1]
 
-        Args:
-            p_net: policy network — called as p_net(feat) -> distribution
-            prev_state: dict with stoch, deter, logits_l0, logits_l1, logits_l2, hidden, action
-            img_steps: int — number of imagination steps
-            is_firsts: (B, 1) or None
-            is_firsts_hidden: (B, C) or None
-            actions: (B, img_steps, A) or None — if provided, override policy
-        Returns:
-            img_states: dict with keys stoch, deter, logits_l0, logits_l1, logits_l2, action
-                        each (B, 1+img_steps, ...)
-        """
-        raise NotImplementedError("ECHELON: imagine with per-level logits in state dict")
+        # Model Recurrent loop with St, At
+        img_states = {"stoch": [prev_state["stoch"]], "deter": [prev_state["deter"]], "logits": [prev_state["logits"]], "action": [prev_state["action"]]}
+        for h in range(img_steps):
+
+            # Compute mask
+            mask = modules.return_mask(
+                seq_len=1, 
+                hidden_len=self.get_hidden_len(prev_state["hidden"]), 
+                left_context=self.att_context_left, 
+                right_context=0, 
+                dtype=prev_state["action"].dtype, 
+                device=prev_state["action"].device
+            )
+            if is_firsts_hidden is not None:
+
+                # Append is_first mask
+                is_firts_mask = modules.return_is_firsts_mask(is_firsts=is_firsts, is_firsts_hidden=is_firsts_hidden)
+                mask = mask.minimum(is_firts_mask)
+
+                # Concat is_firsts to hidden is_firsts (B, C)
+                is_firsts_hidden = torch.cat([is_firsts_hidden[:, 1:], is_firsts], dim=1)
+                
+                # Set is_firsts to zero (B, 1)
+                is_firsts = torch.zeros_like(is_firsts)
+                
+            # Forward Model
+            img_state = self.forward_img(
+                prev_states=prev_state, 
+                prev_actions=prev_state["action"], 
+                mask=mask,
+            )
+            
+            # Current state action
+            if actions is None or h==img_steps-1:
+                img_state["action"] = policy(img_state)
+            else:
+                img_state["action"] = actions[:, h+1:h+2]
+
+            # Slice hidden
+            img_state["hidden"] = self.slice_hidden(img_state["hidden"])
+
+            # Update previous state
+            prev_state = img_state
+
+            # Append to Lists
+            for key, value in img_state.items():
+                if key != "hidden":
+                    img_states[key].append(value)
+
+        # Stack Lists
+        img_states = {k: torch.concat(v, dim=1) for k, v in img_states.items()} # (B, 1+img_steps, D)
+
+        return img_states
 
     def get_feat(self, state, blocks_deter_id=None):
-        """UNCHANGED from TWISTER. Concatenates flattened stoch + deter.
 
-        stoch.flatten(-2, -1) still produces 1024-dim vector regardless of whether
-        stoch is TWISTER's one-hot categorical or ECHELON's reshaped VQ embedding.
-
-        Args:
-            state: dict with "stoch" (*, 32, 32) and "deter" (*, 512)
-            blocks_deter_id: optional int for block-specific deter
-        Returns:
-            feat: (*, 1536) concatenated feature vector
-        """
         return torch.cat([state["stoch"].flatten(start_dim=-2, end_dim=-1), state["deter"] if blocks_deter_id is None else state["blocks_deter"][blocks_deter_id]], dim=-1)
-
+    
     def get_dist(self, state):
-        # ECHELON: killed — replaced by _predict_hierarchical with per-level categoricals
-        # Prior is categorical over codebook indices, not OneHotDist over (stoch_size, discrete)
-        raise NotImplementedError("ECHELON: removed — no OneHotDist in VQ world model")
+
+        return torch.distributions.Independent(distributions.OneHotDist(logits=state['logits'], uniform_mix=self.uniform_mix), 1)
 
     def slice_hidden(self, hidden):
-        """UNCHANGED from TWISTER."""
-        hidden = [(hidden_blk[0][:, -self.att_context_left:], hidden_blk[1][:, -self.att_context_left:]) for hidden_blk in hidden]
-        return hidden
 
+        hidden = [(hidden_blk[0][:, -self.att_context_left:], hidden_blk[1][:, -self.att_context_left:]) for hidden_blk in hidden]
+
+        return hidden
+    
     def get_hidden_len(self, hidden):
-        """UNCHANGED from TWISTER."""
+
         if hidden != None:
             return hidden[0][0].shape[1]
         else:
             return 0
 
     def forward_img(self, prev_states, prev_actions, mask, return_att_w=False, return_blocks_deter=False):
-        """Single-step forward in imagination (or training).
 
-        ECHELON changes:
-        - Action mixer input: UNCHANGED (stoch.flatten(-2,-1) still = 1024)
-        - Transformer forward: UNCHANGED
-        - REPLACED: dynamics_predictor call with _predict_hierarchical(deter)
-        - Return dict ADDS: logits_l0, logits_l1, logits_l2
-        - Return dict REMOVES: "logits" key (replaced by per-level logits)
+        # Clip Action -c:+c
+        if self.action_clip > 0.0:
+            prev_actions = prev_actions * (self.action_clip / torch.clip(torch.abs(prev_actions), min=self.action_clip)).detach()
 
-        Args:
-            prev_states: dict with "stoch" (B, 1, 32, 32), "hidden" list, etc.
-            prev_actions: (B, 1, A) actions
-            mask: (B, 1, 1, C+1) attention mask
-            return_att_w: bool
-            return_blocks_deter: bool
-        Returns:
-            dict with keys:
-                "stoch": (B, 1, 32, 32) — predicted next stoch
-                "deter": (B, 1, hidden_size) — transformer output
-                "hidden": updated hidden state list
-                "logits_l0": (B, 1, num_codes[0])
-                "logits_l1": (B, 1, num_codes[1])
-                "logits_l2": (B, 1, num_codes[2])
-                optionally: "att_w", "blocks_deter"
-        """
-        raise NotImplementedError("ECHELON: forward_img with hierarchical dynamics heads")
+        # Flatten stoch size and discrete size
+        if self.discrete:
+            stoch = prev_states["stoch"].flatten(start_dim=-2, end_dim=-1)
+        else:
+            stoch = prev_states["stoch"]
 
+        # MLP Img 1
+        x = self.action_mixer(torch.concat([stoch, prev_actions], dim=-1))
+
+        # Recurrent
+        assert self.get_hidden_len(prev_states["hidden"]) <= self.att_context_left, "warning: att context left is {} and hidden has length {}".format(self.att_context_left, self.get_hidden_len(prev_states["hidden"]))
+        outputs = self.transformer(x, hidden=prev_states["hidden"], mask=mask, return_hidden=True, return_att_w=return_att_w, return_blocks_x=return_blocks_deter)
+        deter, hidden = outputs.x, outputs.hidden
+
+        # Additional Outputs
+        add_out_dict = {}
+        if return_att_w:
+            add_out_dict["att_w"] = outputs.att_w
+        if return_blocks_deter:
+            add_out_dict["blocks_deter"] = outputs.blocks_x
+
+        # Linear Logits
+        logits = self.dynamics_predictor(deter).reshape(deter.shape[:-1] + (self.stoch_size, self.discrete))
+        dist_params = {'logits': logits}
+    
+        # Sample
+        stoch = self.get_dist(dist_params).rsample()
+
+        # Return Prior
+        return {"stoch": stoch, "deter": deter, "hidden": hidden, **dist_params, **add_out_dict}
+    
     def forward_obs(self, deter, hidden, states):
-        """UNCHANGED from TWISTER. Merges encoder states with transformer output.
 
-        States no longer has "logits" key — just "stoch".
-        Returns: {"deter": deter, "hidden": hidden, **states}
-        Post dict = {"stoch": ..., "deter": ..., "hidden": ...}. No logits.
-
-        Args:
-            deter: (B, L, hidden_size)
-            hidden: list of (K, V) tuples
-            states: dict with "stoch" (B, L, 32, 32)
-        Returns:
-            dict: {"deter": ..., "hidden": ..., "stoch": ...}
-        """
         # Return Post
         return {"deter": deter, "hidden": hidden, **states}
 
     def forward(self, states, prev_states, prev_actions, is_firsts, is_firsts_hidden=None, return_att_w=False, return_blocks_deter=False):
-        """Full training forward: compute prior and posterior for a sequence.
 
-        ECHELON changes:
-        - is_firsts reset logic iterates over prev_states keys. Since observe() now
-          passes only {"stoch"}, the reset loop handles "stoch" and "hidden" only.
-          Per-level logits (logits_l0, l1, l2) are in prev_states from initial() and
-          forward_img(), so the reset loop handles them too.
-        - forward_img returns per-level logits instead of flat "logits"
-        - forward_obs unchanged (passes through "stoch" from encoder)
+        # (B, 1 or L, A)
+        assert prev_actions.dim() == 3 
+        # (B, 1 or L)
+        assert is_firsts.dim() == 2
 
-        Args:
-            states: dict with "stoch" (B, L, 32, 32) — from encoder
-            prev_states: dict with stoch, logits_l0, logits_l1, logits_l2, deter, hidden
-            prev_actions: (B, L, A)
-            is_firsts: (B, L)
-            is_firsts_hidden: (B, C) or None
-            return_att_w: bool
-            return_blocks_deter: bool
-        Returns:
-            post: dict — posterior states
-            prior: dict — prior states with per-level logits
-        """
-        raise NotImplementedError("ECHELON: forward with is_firsts reset on per-level logits")
+        # Clip Action (B, L, D) -c:+c
+        if self.action_clip > 0.0:
+            prev_actions *= (self.action_clip / torch.clip(torch.abs(prev_actions), min=self.action_clip)).detach()
+
+        # Create right context mask (B, 1, L, Th+L)
+        mask = modules.return_mask(seq_len=prev_actions.shape[1], hidden_len=self.get_hidden_len(prev_states["hidden"]), left_context=self.att_context_left, right_context=0, dtype=prev_actions.dtype, device=prev_actions.device)
+
+        # 1: Reset First States and Actions, necessary for traj buffer since some states will be reset mid-sequence
+        # 2: Also Update mask to mask pre is_first positions
+        if is_firsts.any():
+
+            # Unsqueeze is_firsts (B, L, 1)
+            is_firsts = is_firsts.unsqueeze(dim=-1)
+
+            # Reset first Actions
+            prev_actions *= (1.0 - is_firsts)
+
+            # Reset first States (B, L, ...)
+            init_state = self.initial(batch_size=prev_actions.shape[0], seq_length=prev_actions.shape[1], dtype=prev_actions.dtype, device=prev_actions.device)
+            for key, value in prev_states.items():
+
+                # Hidden does not need reset, auto masked
+                if key == "hidden":
+                    prev_states[key] = value
+                # Reset first States 
+                else:
+                    is_firsts_r = torch.reshape(is_firsts, is_firsts.shape + (1,) * (len(value.shape) - len(is_firsts.shape)))
+                    prev_states[key] = value * (1.0 - is_firsts_r) + init_state[key] * is_firsts_r
+
+            # Mask positions of past trajectories # (B, 1, L, Th+L)
+            is_firts_mask = modules.return_is_firsts_mask(is_firsts.squeeze(dim=-1), is_firsts_hidden=is_firsts_hidden)
+            # print(mask.shape, is_firts_mask.shape, is_firsts.shape)
+            mask = mask.minimum(is_firts_mask)
+
+        # Forward Img
+        prior = self.forward_img(prev_states, prev_actions, mask, return_att_w=return_att_w, return_blocks_deter=return_blocks_deter)
+
+        # Forward Obs
+        post = self.forward_obs(prior["deter"], prior["hidden"], states)
+        if return_att_w:
+            post["att_w"] = prior["att_w"]
+        if return_blocks_deter:
+            post["blocks_deter"] = prior["blocks_deter"]
+
+        # Return post and prior
+        return post, prior
