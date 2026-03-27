@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+""" 
+FLAT SINGLE LEVEL VQ-EMA 
+
+No Residual, No Structure, No Cascade, just one codebook.
+"""
 # PyTorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional
-
 
 class VectorQuantizerEMA(nn.Module):
     """Single-level vector quantizer with EMA codebook updates and dead code revival."""
@@ -32,8 +35,25 @@ class VectorQuantizerEMA(nn.Module):
         revival_interval: int = 100,
         revival_threshold: float = 1.0,
     ):
-        pass
+        super().__init__()
+        self.num_codes = num_codes
+        self.embed_dim = embed_dim
+        self.commitment_cost = commitment_cost
+        self.ema_decay = ema_decay
+        self.epsilon = epsilon
+        self.revival_interval = revival_interval
+        self.revival_threshold = revival_threshold
+        
+        # Codebook Embeddings : (K, D)
+        # Initialise from uniform (VQ-VAE paper)
+        embedding = torch.randn(num_codes, embed_dim)
+        self.register_buffer('embedding', embedding)
 
+        # EMA Tracking Buffers
+        self.register_buffer("ema_cluster_size", torch.zeros(num_codes))
+        self.register_buffer("ema_embedding_sum", embedding.clone())
+        self.register_buffer("update_count", torch.tensor(0))
+        
     def _ema_update(
         self, z_flat: torch.Tensor, 
         indices: torch.Tensor
