@@ -58,6 +58,31 @@ class VectorQuantizerEMA(nn.Module):
         self, z_flat: torch.Tensor, 
         indices: torch.Tensor
     ) -> None:
+        """ Update Codebook Embeddings via EMA """
+        
+        # ONEHOT ENCODING Assignments (N, K)
+        encodings = F.one_hot(indices, self.num_codes).float()
+        
+        # Per code count and embedding sum (for this batch)
+        cluster_size = encodings.sum(0)              # (K,)
+        embedding_sum = encodings.t() @ z_flat      # (K, D)
+        
+        # EMA Updates
+        self.ema_cluster_size.mul_(self.ema_decay).add_(cluster_size, alpha=1 - self.ema_decay)
+        self.ema_embedding_sum.mul_(self.ema_decay).add_(embedding_sum, alpha=1 - self.ema_decay)
+        
+        # Laplace smoothing to avoid division by zero
+        n = self.ema_cluster_size.sum()
+        cluster_size_smoothed = (
+            (self.ema_cluster_size + self.epsilon) 
+            / (n + self.num_codes * self.epsilon) * n
+        )
+
+        # Update Codebook 
+        self.embedding.copy_(self.ema_embedding_sum / cluster_size_smoothed.unsqueeze(1))
+        
+        # Increment Counter 
+        self.update_count += 1
         
         pass
 
