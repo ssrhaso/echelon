@@ -155,17 +155,34 @@ class VectorQuantizerEMA(nn.Module):
 
 
 class HRVQ(nn.Module):
-    """Hierarchical Residual Vector Quantization with 3 codebook levels."""
+    """ HRVQ WRAPPER 
+    
+    num_codes = [512] single layer VQ to conform to TSSM interface, 
+    no hierarchcy in this implementation.
+    """
 
     def __init__(
         self,
         embed_dim: int = 1024,
-        num_codes: list[int] = [512, 512, 512],
-        commitment_costs: list[float] = [0.25, 0.5, 1.0],
+        num_codes: list[int] = [512],
+        commitment_costs: list[float] = [0.25],
         ema_decay: float = 0.99,
         epsilon: float = 1e-5,
     ):
-        pass
+        super().__init__()
+        assert len(num_codes) == 1, "Step 1: single level only"
+        self.embed_dim = embed_dim
+        self.num_levels = 1
+
+        self.quantizers = nn.ModuleList([
+            VectorQuantizerEMA(
+                num_codes=num_codes[0],
+                embed_dim=embed_dim,
+                commitment_cost=commitment_costs[0],
+                ema_decay=ema_decay,
+                epsilon=epsilon,
+            )
+        ])
 
     def forward(
         self, 
