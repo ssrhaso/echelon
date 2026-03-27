@@ -114,6 +114,43 @@ class VectorQuantizerEMA(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Quantize input tensor """
         
+        shape = z.shape
+        z_flat = z.reshape(-1, self.embed_dim)  # (N, D)
+        
+        # PAIRWISE DISTANCES 
+        distances = (
+            z.flat.pow(2).sum(dim=1, keepdim=True)
+            - 2 * z_flat @ self.embedding.T
+            + self.embedding.pow(2).sum(1, keepdim=True).T
+        )  # (N, K)
+        
+        # Nearest Codebook Update (Training Only)
+        indices = distances.argmin(dim=1)   # (N,)
+        z_q = self.embedding[indices]       # (N, D) Quantized Vector  
+        
+        # EMA Codebook Update (Training Only)
+        if self.training:
+            self._ema_update(z_flat, indices)
+            self._revive_dead_codes(z_flat)
+            
+        # Commitment Loss 
+        # (Encourage encoder outputs to stay close to codebook vectors)
+        commitment_loss = self.commitment_cost * F.mse_loss(z_flat, z_q.detach())
+        
+        # Straight-Through estimator: gradient flows through z_q as if it were z
+        z_q_st = z_flat + (z_q - z_flat).detach()  # (N, D)
+        
+        # Perplexity exp(entropy) - measures effective codebook usage
+        encodings = F.one_hot(indices, self.num_codes).float()
+        avg_probs = encodings.mean(dim = 0)
+        perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-10)))
+        
+        # RESHAPE BACK to original batch dimensions
+        z_q_st = z_q_st.reshape(shape)
+        indices = indices.reshape(shape[:-1])
+        
+        return z_q_st, indices, commitment_loss, perplexity
+
         pass
 
 
