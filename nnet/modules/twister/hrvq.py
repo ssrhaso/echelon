@@ -216,9 +216,11 @@ class HRVQ(nn.Module):
         self, 
         indices: list[torch.Tensor]
     ) -> torch.Tensor:
-        """Reconstruct z_q from indices. Returns summed z_q."""
+        """Reconstruct z_q from indices. Returns summed z_q. 
+        Single level only, so just decode from the first quantizer.
+        """
         
-        pass
+        return self.quantizers[0].embedding[indices[0]]
 
     def decode_partial(
         self, 
