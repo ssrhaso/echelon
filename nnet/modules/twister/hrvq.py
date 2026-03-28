@@ -188,9 +188,17 @@ class HRVQ(nn.Module):
         self, 
         z_e: torch.Tensor
     ) -> dict:
-        """Hierarchical residual quantization """
+        """ Single level quantization (Matching HRVQ interface)"""
         
-        pass
+        z_q, indices, vq_loss, perplexity = self.quantizers[0](z_e)
+
+        return {
+            "z_q": z_q,
+            "z_q_levels": [z_q],
+            "indices": [indices],
+            "vq_loss": vq_loss,
+            "perplexities": [perplexity],
+        }
 
     @torch.no_grad()
     def encode(
