@@ -240,9 +240,23 @@ class HRVQ(nn.Module):
         self, 
         indices: list[torch.Tensor]
     ) -> dict:
-        """Per-level codebook usage statistics"""
+        """Per-level codebook usage statistics
+        (Single level only, so just return usage for the first quantizer)
+        """
         
-        pass
+        idx = indices[0].reshape(-1)  # Flatten indices
+        unique_codes = idx.unique().numel()
+        total_codes = self.quantizers[0].num_codes
+        
+        # Perplexity from Empirical Distribution
+        counts = torch.bincount(idx, minlength=total_codes).float()
+        probs = counts / counts.sum()
+        perplexity = torch.exp(-torch.sum(probs * torch.log(probs + 1e-10)))
+        
+        return {
+            "usage_0": unique_codes / total_codes,
+            "perplexity_0": perplexity.item(),
+        }
 
 
 if __name__ == "__main__":

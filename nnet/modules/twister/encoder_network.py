@@ -22,7 +22,7 @@ from nnet import modules
 from nnet import distributions
 
 # ECHELON
-from .hrvq import HRVQ
+from .fvq import HRVQ
 
 
 class EncoderNetwork(nn.Module):
