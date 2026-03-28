@@ -1,4 +1,4 @@
-# Copyright 2025, Maxime Burchi.
+# Copyright 2026, Hasaan Ahmad.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .fvq.encoder import EncoderNetwork
-from .decoder_network import DecoderNetwork
-from .fvq.tssm import TSSM
-from .reward_network import RewardNetwork
-from .continue_network import ContinueNetwork
-from .policy_network import PolicyNetwork
-from .value_network import ValueNetwork
-from .contrastive_network import ContrastiveNetwork
-from .fvq import HRVQ
+from .vq import VectorQuantizerEMA
+from .vq import HRVQ
+from .encoder import EncoderNetwork
+from .tssm import TSSM

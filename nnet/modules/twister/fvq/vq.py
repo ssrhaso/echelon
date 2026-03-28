@@ -1,4 +1,4 @@
-# Copyright 2025, Hasaan Ahmad.
+# Copyright 2026, Hasaan Ahmad.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -119,7 +119,7 @@ class VectorQuantizerEMA(nn.Module):
         
         # PAIRWISE DISTANCES 
         distances = (
-            z.flat.pow(2).sum(dim=1, keepdim=True)
+            z_flat.pow(2).sum(dim=1, keepdim=True)
             - 2 * z_flat @ self.embedding.T
             + self.embedding.pow(2).sum(1, keepdim=True).T
         )  # (N, K)
@@ -257,7 +257,3 @@ class HRVQ(nn.Module):
             "usage_0": unique_codes / total_codes,
             "perplexity_0": perplexity.item(),
         }
-
-
-if __name__ == "__main__":
-    pass
