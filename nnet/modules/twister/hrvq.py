@@ -227,9 +227,13 @@ class HRVQ(nn.Module):
         indices: list[torch.Tensor], 
         up_to_level: int
     ) -> torch.Tensor:
-        """Decode using only levels 0..up_to_level"""
+        """Decode using only levels 0..up_to_level
+        Single level only, first quantizer
+        """
         
-        pass
+        assert up_to_level >= 0, "Step 1 only has one level"
+        
+        return self.decode_from_indices(indices)
 
     @torch.no_grad()
     def get_codebook_usage(
