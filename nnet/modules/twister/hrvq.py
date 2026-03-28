@@ -200,6 +200,7 @@ class HRVQ(nn.Module):
             "perplexities": [perplexity],
         }
 
+    # ENCODING DECODING UTILS (for evaluation and inference)
     @torch.no_grad()
     def encode(
         self, 
@@ -207,7 +208,9 @@ class HRVQ(nn.Module):
     ) -> list[torch.Tensor]:
         """Encode to indices only """
         
-        pass
+        # Use forward but only keep indices
+        result = self.forward(z_e)
+        return result["indices"]
 
     def decode_from_indices(
         self, 
