@@ -23,6 +23,7 @@ from nnet import models
 from nnet import optimizers
 from nnet import envs
 from nnet.modules import twister as twister_networks
+from nnet.modules.twister.hrvq import SpatialHRVQEncoder, SpatialHRVQTSSM, spatial_cascade_decode, compute_world_model_losses
 from nnet.structs import AttrDict
 
 # Other
@@ -168,11 +169,13 @@ class TWISTER(models.Model):
         self.config.module_pre_norm = False
         self.config.detach_decoder = False
 
-        # ECHELON: HRVQ and hierarchical dynamics config
-        self.config.hrvq_num_codes = [512]
-        self.config.hrvq_commitment_costs = [0.25]
+        # ECHELON: Spatial HRVQ config
+        self.config.hrvq_num_codes = [512, 512, 512]
+        self.config.hrvq_commitment_costs = [0.25, 0.5, 1.0]
         self.config.hrvq_ema_decay = 0.99
-        self.config.hrvq_cond_proj_dim = 128
+        self.config.hrvq_num_positions = 16
+        self.config.hrvq_position_dim = 8 * model_params.dim_cnn  # = 256
+        self.config.hrvq_spatial_proj_dim = 128
         self.config.echelon_level_loss_weights = [1.0, 0.5, 0.1]  # L0 highest, L2 lowest
 
         # Contrastive
@@ -225,13 +228,15 @@ class TWISTER(models.Model):
 
         # Networks
         feat_size = self.config.model_stoch_size * self.config.model_discrete + self.config.model_hidden_size if self.config.model_discrete else self.config.model_stoch_size + self.config.model_hidden_size
-        # ECHELON: encoder now creates internal HRVQ module
-        self.encoder_network = twister_networks.EncoderNetwork(
+        # ECHELON: Spatial HRVQ encoder
+        self.encoder_network = SpatialHRVQEncoder(
             dim_input_cnn=self.config.image_channels,
             dim_cnn=self.config.dim_cnn,
             cnn_norm=self.config.encoder_cnn_norm,
             stoch_size=self.config.model_stoch_size,
             discrete=self.config.model_discrete,
+            num_positions=self.config.hrvq_num_positions,
+            position_dim=self.config.hrvq_position_dim,
             hrvq_num_codes=self.config.hrvq_num_codes,
             hrvq_commitment_costs=self.config.hrvq_commitment_costs,
             hrvq_ema_decay=self.config.hrvq_ema_decay,
@@ -242,9 +247,9 @@ class TWISTER(models.Model):
             dim_cnn=self.config.dim_cnn, 
             cnn_norm=self.config.norm,
         )
-        # ECHELON: TSSM needs HRVQ reference for codebook lookups during imagination
+        # ECHELON: Spatial HRVQ TSSM with spatial dynamics head
         # NOTE: hrvq is NOT a child module of TSSM — just a reference. Owned by encoder.
-        self.rssm = twister_networks.TSSM(
+        self.rssm = SpatialHRVQTSSM(
             num_actions=self.env.num_actions,
             stoch_size=self.config.model_stoch_size,
             discrete=self.config.model_discrete,
@@ -257,9 +262,11 @@ class TWISTER(models.Model):
             drop_rate=self.config.drop_rate_trans,
             att_context_left=self.config.att_context_left,
             module_pre_norm=self.config.module_pre_norm,
+            num_positions=self.config.hrvq_num_positions,
+            position_dim=self.config.hrvq_position_dim,
             num_codes=self.config.hrvq_num_codes,
             hrvq=self.encoder_network.hrvq,
-            cond_proj_dim=self.config.hrvq_cond_proj_dim,
+            spatial_proj_dim=self.config.hrvq_spatial_proj_dim,
         )
         self.policy_network = twister_networks.PolicyNetwork(
             num_actions=self.env.num_actions, 
@@ -820,233 +827,13 @@ class TWISTER(models.Model):
             return getattr(self.outer, name)
 
         def forward(self, inputs):
-            """ECHELON WorldModel forward pass.
+            """ECHELON WorldModel forward pass — spatial HRVQ.
 
-            Modifications from TWISTER:
-            1. Split encoder output: tssm_states={"stoch"}, hrvq_info kept separately
-            2. TSSM observe unchanged (sees only "stoch")
-            3. CASCADE RECONSTRUCTION LOSS (replaces single decoder loss):
-               For level in [0, 1, 2]:
-                 recon_loss_l = -decoder.forward_cascade(hrvq_info["z_q_levels"], up_to_level=level).log_prob(states)
-                 weighted by echelon_level_loss_weights[level]
-            4. PER-LEVEL CROSS-ENTROPY (replaces flat KL):
-               For level in [0, 1, 2]:
-                 ce_loss_l = F.cross_entropy(priors["logits_l{level}"], hrvq_info["indices"][level])
-                 weighted by echelon_level_loss_weights[level]
-               Note: replaces KL because posterior is a delta (hard VQ index).
-               Cross-entropy = -log p_prior(index_posterior) = KL(delta || prior) + const.
-            5. ADD VQ LOSS: hrvq_info["vq_loss"] added to total loss
-            6. KEEP: reward loss (unchanged, uses feats from get_feat)
-            7. KEEP: continue loss (unchanged)
-            8. KEEP: contrastive loss — posts_con["stoch"].flatten(-2,-1) still = 1024
-               BUT: filter contrastive encoder output same way (only pass "stoch" to TSSM)
-            9. KEEP: hidden flattening / detach section — unchanged
-
-            Args:
-                inputs: tuple of (states, actions, rewards, dones, is_firsts, model_steps)
-                    states: (B, L, C, H, W) preprocessed image observations
-                    actions: (B, L, A) one-hot or continuous actions
-                    rewards: (B, L) scalar rewards
-                    dones: (B, L) episode termination flags
-                    is_firsts: (B, L) episode start flags
-                    model_steps: (B, L) training step counters
-            Returns:
-                outputs: dict (empty — losses registered via add_loss)
+            Delegates to compute_world_model_losses() in hrvq/losses.py.
+            Implements cascade reconstruction, per-level CE, VQ commitment,
+            contrastive with pre-VQ features, and hidden state flattening.
             """
-            # Unpack Inputs (B, L, ...)
-            states, actions, rewards, dones, is_firsts, model_steps = inputs
-
-            # Outputs dict (losses registered via add_loss, not returned)
-            outputs = {}
-
-            assert actions.shape[1] == self.config.L
-
-            ###########################################################################
-            # 1. Encoder Forward
-            ###########################################################################
-
-            # Encode observations: CNN -> pre_vq_proj -> single VQ -> stoch
-            encoder_out = self.encoder_network(states)
-
-            # Split: TSSM only sees "stoch", hrvq_info stays here for losses
-            tssm_states = {"stoch": encoder_out["stoch"]}                   # (B, L, 32, 32)
-            hrvq_info = encoder_out["hrvq_info"]
-            # hrvq_info["indices"][0]: (B, L) — codebook index per frame
-            # hrvq_info["vq_loss"]: scalar — commitment loss
-            # hrvq_info["z_q"]: (B, L, 1024) — quantized vector
-
-            ###########################################################################
-            # 2. TSSM Observe
-            ###########################################################################
-
-            # Run TSSM: creates prior (from dynamics) and posterior (from encoder)
-            posts, priors = self.rssm.observe(
-                states=tssm_states,
-                prev_actions=actions,
-                is_firsts=is_firsts,
-                prev_state=None,
-                is_firsts_hidden=None
-            )
-            # posts["stoch"]:   (B, L, 32, 32) — from encoder (VQ output)
-            # posts["deter"]:   (B, L, 512)    — deterministic state
-            # priors["logits"]: (B, L, 512)    — dynamics predictor logits over codebook
-
-            # Update Hidden States (for is_firsts_hidden flattening later)
-            is_firsts_hidden_concat = is_firsts
-
-            # BUG 1 FIX: Inject prior's logits into posts so that detached_posts
-            # contains the "logits" key that imagine() expects.
-            posts["logits"] = priors["logits"]
-
-            ###########################################################################
-            # 3. Feature Extraction & Predictions
-            ###########################################################################
-
-            # Get features: stoch_flat (1024) + deter (512) = 1536
-            feats = self.rssm.get_feat(posts)  # (B, L, 1536)
-
-            # Predict rewards
-            model_rewards = self.reward_network(feats)
-
-            # Reconstruct images from quantized vector (1024-dim)
-            z_q = hrvq_info["z_q"]  # (B, L, 1024)
-            states_pred = self.decoder_network(z_q)
-
-            # Predict discounts
-            discount_pred = self.continue_network(feats)
-
-            ###########################################################################
-            # 4. Contrastive Loss (copied from original TWISTER verbatim)
-            ###########################################################################
-
-            # Flatten B and L to ensure diff augment for each sample (B*L, 3, H, W)
-            states_flatten = states.flatten(0, 1)
-
-            # Augment
-            states_aug = torch.stack([self.config.contrastive_augments(states_flatten[b]) for b in range(states_flatten.shape[0])], dim=0).reshape(states.shape)
-
-            # Forward encoder only on augmented (NO second TSSM observe)
-            posts_con = self.encoder_network(states_aug)
-
-            # Contrastive steps loop
-            for t in range(self.config.contrastive_steps):
-
-                # Action condition (B, L-t, A*t)
-                if t > 0:
-                    actions_cond = torch.cat([actions[:, 1+t_:min(actions.shape[1], actions.shape[1]+1+t_-t)] for t_ in range(t)], dim=-1)
-
-                # Contrastive features (B, L-t, D)
-                features_feats, features_embed = self.contrastive_network[t](
-                    feats=self.rssm.get_feat(priors) if t == 0 else torch.cat([self.rssm.get_feat(priors)[:, :-t], actions_cond], dim=-1),
-                    embed=posts_con["stoch"].flatten(-2, -1) if t == 0 else posts_con["stoch"].flatten(-2, -1)[:, t:]
-                )
-
-                # Compute contrastive loss
-                if features_feats.dtype != torch.float32:
-                    with torch.cuda.amp.autocast(enabled=False):
-                        info_nce_loss, acc_con = self.compute_contrastive_loss(features_feats.type(torch.float32), features_embed.type(torch.float32))
-                        info_nce_loss = info_nce_loss.type(features_feats.dtype)
-                else:
-                    info_nce_loss, acc_con = self.compute_contrastive_loss(features_feats, features_embed)
-
-                # Add Loss (exponential decay weighting, normalized)
-                self.add_loss(
-                    name="model_contrastive_{}".format(t),
-                    loss=-info_nce_loss.mean(),
-                    weight=self.config.loss_contrastive_scale * (self.config.contrastive_exp_lambda ** t) * (1.0 / sum([self.config.contrastive_exp_lambda ** t_ for t_ in range(self.config.contrastive_steps)]))
-                )
-
-                # Add Accuracy
-                self.add_metric("acc_con" if t == 0 else "acc_con_{}".format(t), acc_con)
-
-            ###########################################################################
-            # 5. Reconstruction Loss (single, no cascade)
-            ###########################################################################
-
-            self.add_loss("model_image", -states_pred.log_prob(states.detach()).mean(), weight=self.config.loss_decoder_scale)
-
-            ###########################################################################
-            # 6. Cross-Entropy Prior Loss (single, replaces KL)
-            ###########################################################################
-
-            prior_logits = priors["logits"]                     # (B, L, 512)
-            target_indices = hrvq_info["indices"][0]             # (B, L)
-
-            ce_loss = F.cross_entropy(
-                prior_logits.reshape(-1, prior_logits.shape[-1]),
-                target_indices.reshape(-1)
-            )
-            self.add_loss("ce_prior", ce_loss, weight=self.config.loss_kl_prior_scale)
-
-            ###########################################################################
-            # 7. VQ Commitment Loss
-            ###########################################################################
-
-            vq_loss = hrvq_info["vq_loss"]
-            self.add_loss("vq_commitment", vq_loss, weight=1.0)
-
-            ###########################################################################
-            # 8. Reward Loss (unsqueeze + detach)
-            ###########################################################################
-
-            self.add_loss("model_reward", -model_rewards.log_prob(rewards.unsqueeze(dim=-1).detach()).mean(), weight=self.config.loss_reward_scale)
-
-            ###########################################################################
-            # 9. Discount Loss (unsqueeze + detach)
-            ###########################################################################
-
-            self.add_loss("model_discount", -discount_pred.log_prob((1.0 - dones).unsqueeze(dim=-1).detach()).mean(), self.config.loss_discount_scale)
-
-            ###########################################################################
-            # 10. Flatten and Detach Posts (full hidden state flattening)
-            ###########################################################################
-
-            # K, V: (B, C+L, D) -> (B*L, C, D)
-            hidden_flatten = [
-                (
-                    # Key (B*L, C, D)
-                    torch.stack([
-                        torch.cat([
-                            hidden_blk[0].new_zeros(hidden_blk[0].shape[0], max(0, self.config.L + self.config.att_context_left - 1 - t - hidden_blk[0].shape[1]), hidden_blk[0].shape[2]),
-                            hidden_blk[0][:, max(0, hidden_blk[0].shape[1] - self.config.L + t + 1 - self.config.att_context_left):hidden_blk[0].shape[1] - self.config.L + t + 1]
-                        ], dim=1)
-                    for t in range(0, self.config.L)], dim=1).flatten(start_dim=0, end_dim=1).detach(),
-
-                    # Value (B*L, C, D)
-                    torch.stack([
-                        torch.cat([
-                            hidden_blk[1].new_zeros(hidden_blk[1].shape[0], max(0, self.config.L + self.config.att_context_left - 1 - t - hidden_blk[1].shape[1]), hidden_blk[1].shape[2]),
-                            hidden_blk[1][:, max(0, hidden_blk[1].shape[1] - self.config.L + t + 1 - self.config.att_context_left):hidden_blk[1].shape[1] - self.config.L + t + 1]
-                        ], dim=1)
-                    for t in range(0, self.config.L)], dim=1).flatten(start_dim=0, end_dim=1).detach(),
-                )
-            for hidden_blk in posts["hidden"]]
-
-            # is_firsts flatten (B, L) -> (B*L, 1)
-            self.outer.detached_is_firsts = is_firsts.flatten(start_dim=0, end_dim=1).unsqueeze(dim=1).detach()
-
-            # is_firsts hidden flatten (B, C+L) -> (B*L, C)
-            self.outer.detached_is_firsts_hidden = torch.stack([
-                torch.cat([
-                    is_firsts_hidden_concat.new_zeros(is_firsts_hidden_concat.shape[0], max(0, self.config.L + self.config.att_context_left - 1 - t - is_firsts_hidden_concat.shape[1])),
-                    is_firsts_hidden_concat.new_ones(is_firsts_hidden_concat.shape[0], 1),
-                    is_firsts_hidden_concat[:, max(0, is_firsts_hidden_concat.shape[1] - self.config.L + t + 1 - self.config.att_context_left):is_firsts_hidden_concat.shape[1] - self.config.L + t]
-                ], dim=1)
-            for t in range(0, self.config.L)], dim=1).flatten(start_dim=0, end_dim=1).detach()
-
-            # Flatten and detach post (B, L, D) -> (B*L, 1, D)
-            self.outer.detached_posts = {k: hidden_flatten if k == "hidden" else v.flatten(start_dim=0, end_dim=1).unsqueeze(dim=1).detach() for k, v in posts.items()}
-
-            ###########################################################################
-            # 11. Logging metrics
-            ###########################################################################
-
-            self.add_info("vq_loss", vq_loss.item())
-            self.add_info("ce_prior_loss", ce_loss.item())
-            self.add_info("recon_loss", (-states_pred.log_prob(states.detach())).mean().item())
-            self.add_info("vq_perplexity", hrvq_info["perplexities"][0].item())
-
-            return outputs
+            return compute_world_model_losses(self, inputs)
         
     class ActorModel(models.Model):
 
@@ -1387,6 +1174,10 @@ class TWISTER(models.Model):
                 is_firsts_hidden=None,
             )
 
+            # ECHELON: inject per-level logits for imagine() compatibility
+            for _lvl in range(len(self.config.hrvq_num_codes)):
+                posts[f"logits_l{_lvl}"] = priors[f"logits_l{_lvl}"]
+
             # Get feat (B, L, 2*D)
             feats = self.rssm.get_feat(posts)
 
@@ -1405,8 +1196,8 @@ class TWISTER(models.Model):
 
             # Forward
             posts_con_out = self.encoder_network(states_aug_con)
-            # ECHELON: filter — contrastive only needs "stoch"
-            posts_con = {"stoch": posts_con_out["stoch"]}
+            # ECHELON: use pre_vq_features for contrastive embed (continuous, not post-VQ)
+            con_embed = posts_con_out["pre_vq_features"]  # (B, L, 1024)
 
             contrastive_sorted_indices = []
 
@@ -1419,7 +1210,7 @@ class TWISTER(models.Model):
                 # Contrastive features (B, L-t, D)
                 features_feats, features_embed = self.contrastive_network[t](
                     feats=self.rssm.get_feat(priors) if t==0 else torch.cat([self.rssm.get_feat(priors)[:, :-t], actions_cond], dim=-1),
-                    embed=posts_con["stoch"].flatten(-2, -1) if t==0 else posts_con["stoch"].flatten(-2, -1)[:, t:]
+                    embed=con_embed if t==0 else con_embed[:, t:]
                 )
 
                 def get_sorted_indices(features_x, features_y):
