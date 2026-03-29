@@ -276,14 +276,52 @@ def test_11_dead_code_revival():
     print(f"  PASS  dead codes revived")
 
 
-def test_12_world_model_forward():
+def test_12_contrastive_gradient_isolation():
+    """Verify contrastive_aggregate gets gradients from contrastive loss only."""
+    print("TEST 12: Contrastive gradient isolation")
+    encoder = SpatialHRVQEncoder()
+    encoder.train()
+    images = torch.randn(2, 4, 3, 64, 64)
+    out = encoder(images)
+
+    # Backward through pre_vq_features only (simulates contrastive loss)
+    out["pre_vq_features"].sum().backward()
+
+    assert encoder.contrastive_aggregate.weight.grad is not None
+    assert encoder.contrastive_aggregate.weight.grad.abs().sum() > 0
+
+    assert encoder.spatial_aggregate.weight.grad is None or encoder.spatial_aggregate.weight.grad.abs().sum() == 0
+
+    print("  PASS  contrastive_aggregate gets grad, spatial_aggregate does not")
+
+
+def test_13_reconstruction_gradient_isolation():
+    """Verify spatial_aggregate gets gradients from stoch only, not contrastive."""
+    print("TEST 13: Reconstruction gradient isolation")
+    encoder = SpatialHRVQEncoder()
+    encoder.train()
+    images = torch.randn(2, 4, 3, 64, 64)
+    out = encoder(images)
+
+    # Backward through stoch only (simulates reconstruction loss)
+    out["stoch"].sum().backward()
+
+    assert encoder.spatial_aggregate.weight.grad is not None
+    assert encoder.spatial_aggregate.weight.grad.abs().sum() > 0
+
+    assert encoder.contrastive_aggregate.weight.grad is None or encoder.contrastive_aggregate.weight.grad.abs().sum() == 0
+
+    print("  PASS  spatial_aggregate gets grad, contrastive_aggregate does not")
+
+
+def test_14_world_model_forward():
     """Full WorldModel.forward on CPU with synthetic batch (B=2, L=4).
 
     Builds all real networks (encoder, TSSM, decoder, reward, continue,
     contrastive) and runs compute_world_model_losses end-to-end.
     Verifies: no crashes, correct loss keys, detached_posts shapes.
     """
-    print("TEST 12: Full WorldModel.forward integration (B=2, L=4)")
+    print("TEST 14: Full WorldModel.forward integration (B=2, L=4)")
 
     import torchvision
 
@@ -525,5 +563,7 @@ if __name__ == "__main__":
     test_9_tssm_imagine()
     test_10_ema_update()
     test_11_dead_code_revival()
-    test_12_world_model_forward()
-    print("\nAll 12 tests passed.")
+    test_12_contrastive_gradient_isolation()
+    test_13_reconstruction_gradient_isolation()
+    test_14_world_model_forward()
+    print("\nAll 14 tests passed.")
