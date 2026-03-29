@@ -117,21 +117,22 @@ class VectorQuantizerEMA(nn.Module):
         shape = z.shape
         z_flat = z.reshape(-1, self.embed_dim)  # (N, D)
         
-        # PAIRWISE DISTANCES 
-        distances = (
-            z_flat.pow(2).sum(dim=1, keepdim=True)
-            - 2 * z_flat @ self.embedding.T
-            + self.embedding.pow(2).sum(1, keepdim=True).T
-        )  # (N, K)
-        
-        # Nearest Codebook Update (Training Only)
-        indices = distances.argmin(dim=1)   # (N,)
-        z_q = self.embedding[indices]       # (N, D) Quantized Vector  
-        
-        # EMA Codebook Update (Training Only)
+        # PAIRWISE DISTANCES — no_grad: only used for argmin (non-differentiable)
+        with torch.no_grad():
+            distances = (
+                z_flat.pow(2).sum(dim=1, keepdim=True)
+                - 2 * z_flat @ self.embedding.T
+                + self.embedding.pow(2).sum(1, keepdim=True).T
+            )  # (N, K)
+
+            # Nearest Codebook Entry
+            indices = distances.argmin(dim=1)   # (N,)
+            z_q = self.embedding[indices]       # (N, D) Quantized Vector
+
+        # EMA Codebook Update (Training Only) — detached to avoid graph corruption
         if self.training:
-            self._ema_update(z_flat, indices)
-            self._revive_dead_codes(z_flat)
+            self._ema_update(z_flat.detach(), indices)
+            self._revive_dead_codes(z_flat.detach())
             
         # Commitment Loss 
         # (Encourage encoder outputs to stay close to codebook vectors)
