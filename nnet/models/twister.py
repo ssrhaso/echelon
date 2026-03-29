@@ -297,7 +297,7 @@ class TWISTER(models.Model):
         )
         self.contrastive_network = nn.ModuleList([twister_networks.ContrastiveNetwork(
             feat_size=feat_size + t * self.env.num_actions,
-            embed_size=self.config.model_stoch_size * self.config.model_discrete,
+            embed_size=self.config.hrvq_num_positions * self.config.hrvq_position_dim,
             hidden_size=self.config.contrastive_hidden_size,
             out_size=self.config.contrastive_out_size,
             num_layers=self.config.contrastive_layers

@@ -97,14 +97,6 @@ class SpatialHRVQEncoder(nn.Module):
             bias_init=dist_bias_init,
         )
 
-        # Separate aggregation for contrastive embed (gradient-isolated from reconstruction)
-        self.contrastive_aggregate = modules.Linear(
-            in_features=num_positions * position_dim,
-            out_features=stoch_size * discrete,
-            weight_init=dist_weight_init,
-            bias_init=dist_bias_init,
-        )
-
     def forward_cnn(self, x):
         """CNN feature extraction — STOP before flattening.
 
@@ -157,9 +149,8 @@ class SpatialHRVQEncoder(nn.Module):
         # 5. Reshape to TSSM stoch: (*, 1024) -> (*, 32, 32)
         stoch = aggregated.reshape(batch_shape + (self.stoch_size, self.discrete))
 
-        # 6. Pre-VQ features for contrastive (dedicated linear, gradient-isolated)
+        # 6. Pre-VQ features for contrastive (raw spatial, no aggregation)
         pre_vq_flat = spatial_features.reshape(batch_shape + (self.num_positions * self.position_dim,))
-        pre_vq_aggregated = self.contrastive_aggregate(pre_vq_flat)
 
         return {
             "stoch": stoch,
@@ -170,5 +161,5 @@ class SpatialHRVQEncoder(nn.Module):
                 "vq_loss": hrvq_out["vq_loss"],
                 "perplexities": hrvq_out["perplexities"],
             },
-            "pre_vq_features": pre_vq_aggregated,
+            "pre_vq_features": pre_vq_flat,  # (*, 4096)
         }
