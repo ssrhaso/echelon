@@ -138,7 +138,7 @@ def test_5_tssm_forward_img():
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
         num_heads=8, drop_rate=0.0, att_context_left=8,
         num_positions=16, position_dim=256, num_codes=[512, 512, 512],
-        hrvq=encoder.hrvq, spatial_proj_dim=128,
+        hrvq=encoder.hrvq, spatial_aggregate=encoder.spatial_aggregate, spatial_proj_dim=128,
     )
     tssm.eval()
 
@@ -168,7 +168,7 @@ def test_6_tssm_get_feat():
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
         num_heads=8, drop_rate=0.0, att_context_left=8,
         num_positions=16, position_dim=256, num_codes=[512, 512, 512],
-        hrvq=encoder.hrvq, spatial_proj_dim=128,
+        hrvq=encoder.hrvq, spatial_aggregate=encoder.spatial_aggregate, spatial_proj_dim=128,
     )
     state = {"stoch": torch.randn(2, 4, 32, 32), "deter": torch.randn(2, 4, 512)}
     feat = tssm.get_feat(state)
@@ -196,7 +196,7 @@ def test_8_tssm_initial_keys():
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
         num_heads=8, drop_rate=0.0, att_context_left=8,
         num_positions=16, position_dim=256, num_codes=[512, 512, 512],
-        hrvq=encoder.hrvq, spatial_proj_dim=128,
+        hrvq=encoder.hrvq, spatial_aggregate=encoder.spatial_aggregate, spatial_proj_dim=128,
     )
     state = tssm.initial(batch_size=2, seq_length=1)
     assert "logits_l0" in state, "Missing logits_l0"
@@ -216,7 +216,7 @@ def test_9_tssm_imagine():
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
         num_heads=8, drop_rate=0.0, att_context_left=8,
         num_positions=16, position_dim=256, num_codes=[512, 512, 512],
-        hrvq=encoder.hrvq, spatial_proj_dim=128,
+        hrvq=encoder.hrvq, spatial_aggregate=encoder.spatial_aggregate, spatial_proj_dim=128,
     )
     tssm.eval()
 
@@ -322,6 +322,7 @@ def test_12_world_model_forward():
         num_positions=16, position_dim=256,
         num_codes=[512, 512, 512],
         hrvq=encoder.hrvq,
+        spatial_aggregate=encoder.spatial_aggregate,
         spatial_proj_dim=128,
     )
 
