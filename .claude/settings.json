@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python nnet/modules/twister/hrvq/tests.py)"
-    ]
-  }
-}
