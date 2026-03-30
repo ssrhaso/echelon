@@ -64,6 +64,7 @@ class SpatialHRVQTSSM(nn.Module):
             position_dim=256,
             num_codes: list = None,
             hrvq=None,
+            spatial_aggregate=None,
             spatial_proj_dim=128,
         ):
         super(SpatialHRVQTSSM, self).__init__()
@@ -159,13 +160,9 @@ class SpatialHRVQTSSM(nn.Module):
             nn.Linear(512, sum(num_codes)),
         )
 
-        # Spatial aggregation: (16*256=4096 -> 1024)
-        self.spatial_aggregate = modules.Linear(
-            in_features=num_positions * position_dim,
-            out_features=stoch_size * discrete,
-            weight_init=self.dist_weight_init,
-            bias_init=self.dist_bias_init
-        )
+        # Shared reference to encoder's spatial_aggregate (not a child module)
+        assert spatial_aggregate is not None, "spatial_aggregate must be provided (shared from encoder)"
+        self.spatial_aggregate = spatial_aggregate
 
         if self.learn_initial:
             self.weight_init = nn.Parameter(torch.zeros(self.hidden_size))
@@ -218,8 +215,9 @@ class SpatialHRVQTSSM(nn.Module):
             z_q_positions = z_q_positions + z_q_level
 
         # 7. Aggregate: (*, 16, 256) -> (*, 4096) -> (*, 1024) -> (*, 32, 32)
+        # detach input so actor gradients (imagination) don't flow into encoder's projection
         z_q_flat = z_q_positions.reshape(batch_shape + (self.num_positions * self.position_dim,))
-        aggregated = self.spatial_aggregate(z_q_flat)
+        aggregated = self.spatial_aggregate(z_q_flat.detach())
         stoch = aggregated.reshape(batch_shape + (self.stoch_size, self.discrete))
 
         return stoch, all_logits, all_indices
