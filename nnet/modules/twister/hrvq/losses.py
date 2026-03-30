@@ -49,13 +49,13 @@ def compute_world_model_losses(wm, inputs):
 
     # 1. Encoder Forward
 
-    # Encode observations: CNN -> spatial HRVQ -> aggregate -> stoch
+    # Encode observations: CNN -> spatial HRVQ -> stoch
     encoder_out = wm.encoder_network(states)
 
     # Split: TSSM only sees "stoch", hrvq_info and pre_vq_features stay local
-    tssm_states = {"stoch": encoder_out["stoch"]}             # (B, L, 32, 32)
+    tssm_states = {"stoch": encoder_out["stoch"]}             # (B, L, 16, 256)
     hrvq_info = encoder_out["hrvq_info"]
-    pre_vq_features = encoder_out["pre_vq_features"]          # (B, L, 1024)
+    pre_vq_features = encoder_out["pre_vq_features"]          # (B, L, 4096)
     # hrvq_info["indices"][level]: (B, L, 16) — codebook indices per position per level
     # hrvq_info["vq_loss"]: scalar — total commitment loss
     # hrvq_info["z_q_spatial"]: (B, L, 16, 256) — quantized spatial tokens
@@ -84,7 +84,7 @@ def compute_world_model_losses(wm, inputs):
 
     # 3. Feature Extraction & Predictions
 
-    # Get features: stoch_flat (1024) + deter (512) = 1536
+    # Get features: stoch_flat (4096) + deter (512) = 4608
     feats = wm.rssm.get_feat(posts)
 
     # Predict rewards

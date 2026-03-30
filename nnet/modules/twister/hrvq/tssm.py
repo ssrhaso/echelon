@@ -17,12 +17,12 @@
 The TSSM transformer processes one aggregated token per timestep (unchanged).
 Spatial structure exists only in the dynamics head: deter(512) is projected to
 16 spatial positions, each predicting 3-level codebook logits via a shared MLP.
-Codebook lookup + residual sum + aggregation produces stoch(32, 32).
+Codebook lookup + residual sum produces stoch(16, 256) — a parameter-free reshape
+(identity) from z_q_positions, preserving full spatial information.
 
 Changes from fvq/tssm.py:
 - dynamics_predictor replaced by spatial_proj + position_embeddings + spatial_dynamics_mlp
 - State dict keys: logits_l0, logits_l1, logits_l2 instead of logits
-- spatial_aggregate Linear(4096 -> 1024) for codebook outputs -> stoch
 """
 
 import torch
@@ -38,9 +38,9 @@ class SpatialHRVQTSSM(nn.Module):
     def __init__(
             self,
             num_actions,
-            stoch_size=32,
+            stoch_size=16,
             act_fun=nn.SiLU,
-            discrete=32,
+            discrete=256,
             learn_initial=True,
             weight_init="dreamerv3_normal",
             bias_init="zeros",
@@ -64,7 +64,6 @@ class SpatialHRVQTSSM(nn.Module):
             position_dim=256,
             num_codes: list = None,
             hrvq=None,
-            spatial_aggregate=None,
             spatial_proj_dim=128,
         ):
         super(SpatialHRVQTSSM, self).__init__()
@@ -160,10 +159,6 @@ class SpatialHRVQTSSM(nn.Module):
             nn.Linear(512, sum(num_codes)),
         )
 
-        # Shared reference to encoder's spatial_aggregate (not a child module)
-        assert spatial_aggregate is not None, "spatial_aggregate must be provided (shared from encoder)"
-        self.spatial_aggregate = spatial_aggregate
-
         if self.learn_initial:
             self.weight_init = nn.Parameter(torch.zeros(self.hidden_size))
 
@@ -214,11 +209,8 @@ class SpatialHRVQTSSM(nn.Module):
             z_q_level = z_q_level.reshape(batch_shape + (self.num_positions, self.position_dim))
             z_q_positions = z_q_positions + z_q_level
 
-        # 7. Aggregate: (*, 16, 256) -> (*, 4096) -> (*, 1024) -> (*, 32, 32)
-        # detach input so actor gradients (imagination) don't flow into encoder's projection
-        z_q_flat = z_q_positions.reshape(batch_shape + (self.num_positions * self.position_dim,))
-        aggregated = self.spatial_aggregate(z_q_flat.detach())
-        stoch = aggregated.reshape(batch_shape + (self.stoch_size, self.discrete))
+        # 7. stoch IS z_q_positions — reshape is identity with stoch_size=16, discrete=256
+        stoch = z_q_positions.reshape(batch_shape + (self.stoch_size, self.discrete))
 
         return stoch, all_logits, all_indices
 
@@ -228,7 +220,7 @@ class SpatialHRVQTSSM(nn.Module):
         Args:
             deter: (*, hidden_size) deterministic state
         Returns:
-            stoch: (*, stoch_size, discrete) = (*, 32, 32)
+            stoch: (*, stoch_size, discrete) = (*, 16, 256)
         """
         stoch, _, _ = self._predict_spatial(deter, sample=False)
         return stoch
@@ -359,7 +351,7 @@ class SpatialHRVQTSSM(nn.Module):
         return img_states
 
     def get_feat(self, state, blocks_deter_id=None):
-        """Unchanged from TWISTER. Concatenate stoch (flat 1024) + deter (512) = 1536."""
+        """Concatenate stoch (flat 4096) + deter (512) = 4608."""
         return torch.cat([state["stoch"].flatten(start_dim=-2, end_dim=-1), state["deter"] if blocks_deter_id is None else state["blocks_deter"][blocks_deter_id]], dim=-1)
 
     def slice_hidden(self, hidden):

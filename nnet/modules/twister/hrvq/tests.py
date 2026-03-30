@@ -108,7 +108,7 @@ def test_3_encoder_shape():
     images = torch.randn(2, 4, 3, 64, 64)
     out = encoder(images)
 
-    assert out["stoch"].shape == (2, 4, 32, 32), f"stoch: {out['stoch'].shape}"
+    assert out["stoch"].shape == (2, 4, 16, 256), f"stoch: {out['stoch'].shape}"
     assert out["hrvq_info"]["z_q_spatial"].shape == (2, 4, 16, 256), f"z_q_spatial: {out['hrvq_info']['z_q_spatial'].shape}"
     assert len(out["hrvq_info"]["z_q_levels_spatial"]) == 3
     for i in range(3):
@@ -125,7 +125,7 @@ def test_4_encoder_single_image():
     encoder.eval()
     image = torch.randn(1, 3, 64, 64)
     out = encoder(image)
-    assert out["stoch"].shape == (1, 32, 32), f"stoch: {out['stoch'].shape}"
+    assert out["stoch"].shape == (1, 16, 256), f"stoch: {out['stoch'].shape}"
     assert out["hrvq_info"]["indices"][0].shape == (1, 16), f"indices: {out['hrvq_info']['indices'][0].shape}"
     print(f"  PASS  stoch={out['stoch'].shape}")
 
@@ -138,7 +138,7 @@ def test_5_tssm_forward_img():
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
         num_heads=8, drop_rate=0.0, att_context_left=8,
         num_positions=16, position_dim=256, num_codes=[512, 512, 512],
-        hrvq=encoder.hrvq, spatial_aggregate=encoder.spatial_aggregate, spatial_proj_dim=128,
+        hrvq=encoder.hrvq, spatial_proj_dim=128,
     )
     tssm.eval()
 
@@ -152,7 +152,7 @@ def test_5_tssm_forward_img():
     with torch.no_grad():
         out = tssm.forward_img(prev_state, prev_actions, mask)
 
-    assert out["stoch"].shape == (B, L, 32, 32), f"stoch: {out['stoch'].shape}"
+    assert out["stoch"].shape == (B, L, 16, 256), f"stoch: {out['stoch'].shape}"
     assert out["deter"].shape == (B, L, 512), f"deter: {out['deter'].shape}"
     assert out["logits_l0"].shape == (B, L, 16, 512), f"logits_l0: {out['logits_l0'].shape}"
     assert out["logits_l1"].shape == (B, L, 16, 512), f"logits_l1: {out['logits_l1'].shape}"
@@ -161,25 +161,25 @@ def test_5_tssm_forward_img():
 
 
 def test_6_tssm_get_feat():
-    """TSSM get_feat unchanged: stoch(32,32) + deter(512) = 1536."""
+    """TSSM get_feat: stoch(16,256) + deter(512) = 4608."""
     print("TEST 6: TSSM get_feat")
     encoder = SpatialHRVQEncoder()
     tssm = SpatialHRVQTSSM(
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
         num_heads=8, drop_rate=0.0, att_context_left=8,
         num_positions=16, position_dim=256, num_codes=[512, 512, 512],
-        hrvq=encoder.hrvq, spatial_aggregate=encoder.spatial_aggregate, spatial_proj_dim=128,
+        hrvq=encoder.hrvq, spatial_proj_dim=128,
     )
-    state = {"stoch": torch.randn(2, 4, 32, 32), "deter": torch.randn(2, 4, 512)}
+    state = {"stoch": torch.randn(2, 4, 16, 256), "deter": torch.randn(2, 4, 512)}
     feat = tssm.get_feat(state)
-    assert feat.shape == (2, 4, 1536), f"feat: {feat.shape}"
+    assert feat.shape == (2, 4, 4608), f"feat: {feat.shape}"
     print(f"  PASS  feat={feat.shape}")
 
 
 def test_7_cascade_decode():
     """spatial_cascade_decode shape correctness."""
     print("TEST 7: spatial_cascade_decode shape")
-    decoder = DecoderNetwork(feat_size=1024, dim_cnn=32)
+    decoder = DecoderNetwork(feat_size=4096, dim_cnn=32)
     z_q_levels = [torch.randn(2, 4, 16, 256) for _ in range(3)]
     dist = spatial_cascade_decode(decoder, z_q_levels, up_to_level=0, dim_cnn=32)
     assert dist.mode().shape == (2, 4, 3, 64, 64), f"L0 decode: {dist.mode().shape}"
@@ -196,14 +196,14 @@ def test_8_tssm_initial_keys():
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
         num_heads=8, drop_rate=0.0, att_context_left=8,
         num_positions=16, position_dim=256, num_codes=[512, 512, 512],
-        hrvq=encoder.hrvq, spatial_aggregate=encoder.spatial_aggregate, spatial_proj_dim=128,
+        hrvq=encoder.hrvq, spatial_proj_dim=128,
     )
     state = tssm.initial(batch_size=2, seq_length=1)
     assert "logits_l0" in state, "Missing logits_l0"
     assert "logits_l1" in state, "Missing logits_l1"
     assert "logits_l2" in state, "Missing logits_l2"
     assert state["logits_l0"].shape == (2, 1, 16, 512), f"logits_l0: {state['logits_l0'].shape}"
-    assert state["stoch"].shape == (2, 1, 32, 32), f"stoch: {state['stoch'].shape}"
+    assert state["stoch"].shape == (2, 1, 16, 256), f"stoch: {state['stoch'].shape}"
     assert state["deter"].shape == (2, 1, 512), f"deter: {state['deter'].shape}"
     print(f"  PASS  keys={list(state.keys())}  logits_l0={state['logits_l0'].shape}")
 
@@ -216,7 +216,7 @@ def test_9_tssm_imagine():
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
         num_heads=8, drop_rate=0.0, att_context_left=8,
         num_positions=16, position_dim=256, num_codes=[512, 512, 512],
-        hrvq=encoder.hrvq, spatial_aggregate=encoder.spatial_aggregate, spatial_proj_dim=128,
+        hrvq=encoder.hrvq, spatial_proj_dim=128,
     )
     tssm.eval()
 
@@ -233,7 +233,7 @@ def test_9_tssm_imagine():
     class MockPolicy(nn.Module):
         def __init__(self):
             super().__init__()
-            self.linear = nn.Linear(1536, 18)
+            self.linear = nn.Linear(4608, 18)
         def forward(self, x):
             return MockDist(self.linear(x))
 
@@ -244,7 +244,7 @@ def test_9_tssm_imagine():
 
     expected_keys = {"stoch", "deter", "action", "logits_l0", "logits_l1", "logits_l2"}
     assert expected_keys.issubset(set(img_states.keys())), f"Missing keys: {expected_keys - set(img_states.keys())}"
-    assert img_states["stoch"].shape == (B, 1 + img_steps, 32, 32), f"stoch: {img_states['stoch'].shape}"
+    assert img_states["stoch"].shape == (B, 1 + img_steps, 16, 256), f"stoch: {img_states['stoch'].shape}"
     assert img_states["logits_l0"].shape == (B, 1 + img_steps, 16, 512), f"logits_l0: {img_states['logits_l0'].shape}"
     print(f"  PASS  stoch={img_states['stoch'].shape}  logits_l0={img_states['logits_l0'].shape}")
 
@@ -289,12 +289,12 @@ def test_12_world_model_forward():
 
     B, L = 2, 4
     num_actions = 18
-    feat_size = 32 * 32 + 512  # 1536
+    feat_size = 16 * 256 + 512  # 4608
 
     encoder = SpatialHRVQEncoder(
         dim_input_cnn=3, dim_cnn=32,
         cnn_norm={"class": "LayerNorm", "params": {"eps": 1e-3, "convert_float32": True}},
-        stoch_size=32, discrete=32,
+        stoch_size=16, discrete=256,
         num_positions=16, position_dim=256,
         hrvq_num_codes=[512, 512, 512],
         hrvq_commitment_costs=[0.25, 0.5, 1.0],
@@ -303,14 +303,14 @@ def test_12_world_model_forward():
 
     decoder = DecoderNetwork(
         dim_output_cnn=3,
-        feat_size=32 * 32,  # 1024
+        feat_size=16 * 256,  # 4096
         dim_cnn=32,
         cnn_norm={"class": "LayerNorm", "params": {"eps": 1e-3, "convert_float32": True}},
     )
 
     rssm = SpatialHRVQTSSM(
         num_actions=num_actions,
-        stoch_size=32, discrete=32,
+        stoch_size=16, discrete=256,
         learn_initial=True,
         norm={"class": "LayerNorm", "params": {"eps": 1e-3, "convert_float32": True}},
         hidden_size=512,
@@ -322,7 +322,6 @@ def test_12_world_model_forward():
         num_positions=16, position_dim=256,
         num_codes=[512, 512, 512],
         hrvq=encoder.hrvq,
-        spatial_aggregate=encoder.spatial_aggregate,
         spatial_proj_dim=128,
     )
 
@@ -470,7 +469,7 @@ def test_12_world_model_forward():
 
     # Shapes: (B*L, 1, ...)
     BL = B * L
-    assert dp["stoch"].shape == (BL, 1, 32, 32), f"detached_posts stoch: {dp['stoch'].shape}"
+    assert dp["stoch"].shape == (BL, 1, 16, 256), f"detached_posts stoch: {dp['stoch'].shape}"
     assert dp["deter"].shape == (BL, 1, 512), f"detached_posts deter: {dp['deter'].shape}"
     assert dp["logits_l0"].shape == (BL, 1, 16, 512), f"detached_posts logits_l0: {dp['logits_l0'].shape}"
     print(f"  detached_posts: stoch={dp['stoch'].shape}  deter={dp['deter'].shape}  logits_l0={dp['logits_l0'].shape}")

@@ -44,8 +44,8 @@ class TWISTER(models.Model):
                 "hidden_size": 512,
                 "num_layers": 2,
 
-                "stoch_size": 32,
-                "discrete": 32,
+                "stoch_size": 16,
+                "discrete": 256,
 
                 "num_blocks_trans": 4,
                 "ff_ratio_trans": 2,
@@ -248,7 +248,7 @@ class TWISTER(models.Model):
             cnn_norm=self.config.norm,
         )
         # ECHELON: Spatial HRVQ TSSM with spatial dynamics head
-        # NOTE: hrvq and spatial_aggregate are NOT child modules of TSSM — just references. Owned by encoder.
+        # NOTE: hrvq is NOT a child module of TSSM — just a reference. Owned by encoder.
         self.rssm = SpatialHRVQTSSM(
             num_actions=self.env.num_actions,
             stoch_size=self.config.model_stoch_size,
@@ -266,7 +266,6 @@ class TWISTER(models.Model):
             position_dim=self.config.hrvq_position_dim,
             num_codes=self.config.hrvq_num_codes,
             hrvq=self.encoder_network.hrvq,
-            spatial_aggregate=self.encoder_network.spatial_aggregate,
             spatial_proj_dim=self.config.hrvq_spatial_proj_dim,
         )
         self.policy_network = twister_networks.PolicyNetwork(

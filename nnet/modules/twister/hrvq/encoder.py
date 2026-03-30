@@ -36,8 +36,8 @@ class SpatialHRVQEncoder(nn.Module):
         bias_init="zeros",
         cnn_norm={"class": "LayerNorm", "params": {"eps": 1e-3}},
         image_size=(64, 64),
-        stoch_size=32,
-        discrete=32,
+        stoch_size=16,
+        discrete=256,
         dist_weight_init="xavier_uniform",
         dist_bias_init="zeros",
         # Spatial HRVQ params
@@ -89,14 +89,6 @@ class SpatialHRVQEncoder(nn.Module):
             epsilon=hrvq_epsilon,
         )
 
-        # Aggregate spatial tokens to stoch: Linear(16*256=4096 -> 32*32=1024)
-        self.spatial_aggregate = modules.Linear(
-            in_features=num_positions * position_dim,
-            out_features=stoch_size * discrete,
-            weight_init=dist_weight_init,
-            bias_init=dist_bias_init,
-        )
-
     def forward_cnn(self, x):
         """CNN feature extraction — STOP before flattening.
 
@@ -114,14 +106,14 @@ class SpatialHRVQEncoder(nn.Module):
         return x
 
     def forward(self, inputs):
-        """Full encoder: CNN -> spatial HRVQ -> aggregate -> stoch.
+        """Full encoder: CNN -> spatial HRVQ -> stoch.
 
         Args:
             inputs: (B, L, C, H, W) or (B, C, H, W)
         Returns dict:
-            "stoch": (*, 32, 32) aggregated, reshaped for TSSM compatibility
+            "stoch": (*, 16, 256) z_q_spatial reshaped as stoch (identity reshape)
             "hrvq_info": dict with spatial HRVQ outputs
-            "pre_vq_features": (*, 1024) continuous features for contrastive
+            "pre_vq_features": (*, 4096) continuous features for contrastive
         """
         # 1. CNN spatial features: (*, 16, 256)
         spatial_features = self.forward_cnn(inputs)
@@ -142,12 +134,8 @@ class SpatialHRVQEncoder(nn.Module):
             for idx in hrvq_out["indices"]
         ]
 
-        # 4. Aggregate: (*, 16, 256) -> flatten (*, 4096) -> Linear -> (*, 1024)
-        z_q_flat = z_q_spatial.reshape(batch_shape + (self.num_positions * self.position_dim,))
-        aggregated = self.spatial_aggregate(z_q_flat)
-
-        # 5. Reshape to TSSM stoch: (*, 1024) -> (*, 32, 32)
-        stoch = aggregated.reshape(batch_shape + (self.stoch_size, self.discrete))
+        # 4. stoch IS z_q_spatial — reshape is identity with stoch_size=16, discrete=256
+        stoch = z_q_spatial.reshape(batch_shape + (self.stoch_size, self.discrete))
 
         # 6. Pre-VQ features for contrastive (raw spatial, no aggregation)
         pre_vq_flat = spatial_features.reshape(batch_shape + (self.num_positions * self.position_dim,))
