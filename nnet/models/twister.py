@@ -128,10 +128,10 @@ class TWISTER(models.Model):
         self.config.model_discrete = model_params.discrete
         self.config.model_stoch_size = model_params.stoch_size
         self.config.model_hidden_size = model_params.hidden_size
-        self.config.action_hidden_size = model_params.hidden_size
-        self.config.value_hidden_size = model_params.hidden_size
-        self.config.reward_hidden_size = model_params.hidden_size
-        self.config.discount_hidden_size = model_params.hidden_size
+        self.config.action_hidden_size = model_params.hidden_size * 2    # 1024: reduce compression ratio from 9:1 to 4.5:1
+        self.config.value_hidden_size = model_params.hidden_size * 2     # 1024
+        self.config.reward_hidden_size = model_params.hidden_size * 2    # 1024
+        self.config.discount_hidden_size = model_params.hidden_size * 2  # 1024
         self.config.action_layers = model_params.num_layers
         self.config.value_layers = model_params.num_layers
         self.config.reward_layers = model_params.num_layers
