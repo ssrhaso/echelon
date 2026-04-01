@@ -27,7 +27,6 @@ Changes from fvq/tssm.py:
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from nnet import modules
 from nnet import distributions
@@ -190,36 +189,27 @@ class SpatialHRVQTSSM(nn.Module):
         # 4. Split logits per level
         all_logits = list(torch.split(logits_all, self.num_codes, dim=-1))
 
-        # 5. Straight-through differentiable codebook lookup per level
+        # 5. Sample or argmax per level per position
         all_indices = []
+        for level_logits in all_logits:
+            if sample:
+                indices = torch.distributions.Categorical(logits=level_logits).sample()
+            else:
+                indices = level_logits.argmax(dim=-1)
+            all_indices.append(indices)
+
+        # 6. Codebook lookup + residual sum per position
         z_q_positions = torch.zeros(
             batch_shape + (self.num_positions, self.position_dim),
             device=deter.device, dtype=deter.dtype
         )
-
-        for level, level_logits in enumerate(all_logits):
-            # Soft probabilities with uniform mix (matches OneHotDist pattern)
-            probs = torch.softmax(level_logits, dim=-1)
-            if self.uniform_mix > 0:
-                probs = (1 - self.uniform_mix) * probs + self.uniform_mix / probs.shape[-1]
-
-            # Hard indices (forward pass)
-            if sample:
-                indices = torch.distributions.Categorical(probs=probs).sample()
-            else:
-                indices = probs.argmax(dim=-1)  # argmax on mixed probs, consistent with OneHotDist.mode()
-            all_indices.append(indices)
-
-            # Straight-through: hard one-hot forward, soft gradient backward
-            one_hot_hard = F.one_hot(indices, num_classes=self.num_codes[level]).to(probs.dtype)
-            one_hot_st = one_hot_hard - probs.detach() + probs
-
-            # Differentiable matmul with codebook (detach to protect EMA-trained vectors)
-            codebook = self.hrvq.quantizers[level].embedding.detach().clone()  # (num_codes, position_dim)
-            z_q_level = one_hot_st @ codebook  # (*, num_positions, position_dim)
+        for level, indices in enumerate(all_indices):
+            idx_flat = indices.reshape(-1)
+            z_q_level = self.hrvq.quantizers[level].embedding[idx_flat]
+            z_q_level = z_q_level.reshape(batch_shape + (self.num_positions, self.position_dim))
             z_q_positions = z_q_positions + z_q_level
 
-        # 6. stoch IS z_q_positions
+        # 7. stoch IS z_q_positions — reshape is identity with stoch_size=16, discrete=256
         stoch = z_q_positions.reshape(batch_shape + (self.stoch_size, self.discrete))
 
         return stoch, all_logits, all_indices
