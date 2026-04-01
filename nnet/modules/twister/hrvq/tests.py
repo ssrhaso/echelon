@@ -511,9 +511,15 @@ def test_12_world_model_forward():
     print(f"  PASS")
 
 
-def test_13_imagination_gradient_flow():
-    """Verify gradients flow from stoch through _predict_spatial to dynamics predictor."""
-    print("TEST 13: Imagination gradient flow")
+def test_13_predict_spatial_no_stoch_grad():
+    """Verify _predict_spatial uses non-differentiable codebook lookup.
+
+    After reverting the straight-through estimator, stoch is produced by hard
+    Categorical sample + direct embedding indexing. Gradients should NOT flow
+    from stoch back through deter (this is correct — actor uses feats.detach()).
+    Gradients DO flow from logits through the dynamics predictor.
+    """
+    print("TEST 13: _predict_spatial non-differentiable stoch (reverted ST)")
     encoder = SpatialHRVQEncoder()
     tssm = SpatialHRVQTSSM(
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
@@ -523,28 +529,19 @@ def test_13_imagination_gradient_flow():
     )
     tssm.train()
 
+    # stoch has no grad (hard codebook lookup)
     deter = torch.randn(2, 1, 512, requires_grad=True)
     stoch, logits, indices = tssm._predict_spatial(deter, sample=False)
-    loss = stoch.sum()
-    loss.backward()
+    assert not stoch.requires_grad, "stoch should NOT require grad (non-differentiable lookup)"
+    print(f"  stoch.requires_grad = {stoch.requires_grad} (correct)")
 
-    assert deter.grad is not None and deter.grad.abs().sum() > 0, "GRADIENT DEAD: deter"
-    print(f"  deter grad norm: {deter.grad.norm():.6f}")
-
+    # But logits DO have grad (dynamics predictor is differentiable)
+    assert logits[0].requires_grad, "logits should require grad"
+    logits[0].sum().backward()
+    assert deter.grad is not None and deter.grad.abs().sum() > 0, "GRADIENT DEAD: deter->logits"
+    print(f"  deter->logits grad norm: {deter.grad.norm():.6f}")
     assert tssm.spatial_proj.weight.grad is not None, "GRADIENT DEAD: spatial_proj"
     print(f"  spatial_proj grad norm: {tssm.spatial_proj.weight.grad.norm():.6f}")
-
-    for name, p in tssm.spatial_dynamics_mlp.named_parameters():
-        assert p.grad is not None, f"GRADIENT DEAD: spatial_dynamics_mlp.{name}"
-    print(f"  spatial_dynamics_mlp gradients OK")
-
-    # Also test with sample=True
-    tssm.zero_grad()
-    deter2 = torch.randn(2, 1, 512, requires_grad=True)
-    stoch2, _, _ = tssm._predict_spatial(deter2, sample=True)
-    stoch2.sum().backward()
-    assert deter2.grad is not None and deter2.grad.abs().sum() > 0, "GRADIENT DEAD: deter (sample=True)"
-    print(f"  deter grad norm (sample=True): {deter2.grad.norm():.6f}")
 
     print(f"  PASS")
 
@@ -564,5 +561,5 @@ if __name__ == "__main__":
     test_10_ema_update()
     test_11_dead_code_revival()
     test_12_world_model_forward()
-    test_13_imagination_gradient_flow()
+    test_13_predict_spatial_no_stoch_grad()
     print("\nAll 13 tests passed.")

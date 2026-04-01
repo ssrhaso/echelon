@@ -105,7 +105,13 @@ def compute_world_model_losses(wm, inputs):
     posts_con = wm.encoder_network(states_aug)
 
     # Use pre_vq_features for contrastive embed (continuous, not post-VQ)
-    con_embed = posts_con["pre_vq_features"]  # (B, L, 1024)
+    con_embed = posts_con["pre_vq_features"]  # (B, L, 4096)
+
+    # Continuous feats for contrastive predictor side:
+    # Replace get_feat(priors) [contains non-differentiable VQ stoch] with
+    # cat(pre_vq_features, deter) [continuous, differentiable, same 4608 dim].
+    # This lets InfoNCE gradients flow back through the encoder CNN and transformer.
+    continuous_feats = torch.cat([pre_vq_features, priors['deter']], dim=-1)  # (B, L, 4608)
 
     # Contrastive steps loop
     for t in range(wm.config.contrastive_steps):
@@ -116,7 +122,7 @@ def compute_world_model_losses(wm, inputs):
 
         # Contrastive features (B, L-t, D)
         features_feats, features_embed = wm.contrastive_network[t](
-            feats=wm.rssm.get_feat(priors) if t == 0 else torch.cat([wm.rssm.get_feat(priors)[:, :-t], actions_cond], dim=-1),
+            feats=continuous_feats if t == 0 else torch.cat([continuous_feats[:, :-t], actions_cond], dim=-1),
             embed=con_embed if t == 0 else con_embed[:, t:]
         )
 
