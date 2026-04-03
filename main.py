@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Solve dm_control bug
+# Solve dm_control bug (EGL is Linux-only)
 import os
-os.environ["MUJOCO_GL"] = "egl"
+import sys
+if sys.platform == "linux":
+    os.environ["MUJOCO_GL"] = "egl"
 
 # PyTorch
 import torch
