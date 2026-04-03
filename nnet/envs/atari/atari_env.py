@@ -19,16 +19,49 @@ import torchvision
 # NeuralNets
 from nnet.structs import AttrDict
 
-# Gym
-import gym.envs.atari
-import gym.wrappers
+# Gymnasium + ALE
+import ale_py
+import gymnasium as gym
+import gymnasium.wrappers
 
 # Other
 import os
 import datetime
 
+gym.register_envs(ale_py)
+
+GAME_TO_ALE_ID = {
+    "alien": "ALE/Alien-v5",
+    "amidar": "ALE/Amidar-v5",
+    "assault": "ALE/Assault-v5",
+    "asterix": "ALE/Asterix-v5",
+    "bank_heist": "ALE/BankHeist-v5",
+    "battle_zone": "ALE/BattleZone-v5",
+    "boxing": "ALE/Boxing-v5",
+    "breakout": "ALE/Breakout-v5",
+    "chopper_command": "ALE/ChopperCommand-v5",
+    "crazy_climber": "ALE/CrazyClimber-v5",
+    "demon_attack": "ALE/DemonAttack-v5",
+    "freeway": "ALE/Freeway-v5",
+    "frostbite": "ALE/Frostbite-v5",
+    "gopher": "ALE/Gopher-v5",
+    "hero": "ALE/Hero-v5",
+    "jamesbond": "ALE/Jamesbond-v5",
+    "kangaroo": "ALE/Kangaroo-v5",
+    "krull": "ALE/Krull-v5",
+    "kung_fu_master": "ALE/KungFuMaster-v5",
+    "ms_pacman": "ALE/MsPacman-v5",
+    "pong": "ALE/Pong-v5",
+    "private_eye": "ALE/PrivateEye-v5",
+    "qbert": "ALE/Qbert-v5",
+    "road_runner": "ALE/RoadRunner-v5",
+    "seaquest": "ALE/Seaquest-v5",
+    "up_n_down": "ALE/UpNDown-v5",
+}
+
+
 class AtariEnv:
-    
+
     """
 
     Atari 100k 26:
@@ -58,7 +91,7 @@ class AtariEnv:
         24: road_runner
         25: seaquest
         26: up_n_down
-    
+
     """
 
     def obs_space(self):
@@ -69,17 +102,17 @@ class AtariEnv:
             return (["image", (3 * self.history_frames, self.img_size[0], self.img_size[1]), torch.uint8],)
 
     def __init__(
-            self, 
-            game, 
-            img_size=(64, 64), 
-            action_repeat=4, 
-            history_frames=1, 
-            seed=None, 
-            repeat_action_probability=0.0, 
-            episode_saving_path=None, 
-            noop_max=30, 
-            terminal_on_life_loss=False, 
-            grayscale_obs=False, 
+            self,
+            game,
+            img_size=(64, 64),
+            action_repeat=4,
+            history_frames=1,
+            seed=None,
+            repeat_action_probability=0.0,
+            episode_saving_path=None,
+            noop_max=30,
+            terminal_on_life_loss=False,
+            grayscale_obs=False,
             full_action_space=False
         ):
 
@@ -89,16 +122,21 @@ class AtariEnv:
         self.terminal_on_life_loss = terminal_on_life_loss
 
         # Env
-        self.env = gym.envs.atari.AtariEnv(game=game, obs_type='image', frameskip=1, repeat_action_probability=repeat_action_probability, full_action_space=full_action_space)
+        env_id = GAME_TO_ALE_ID[game]
+        self.env = gym.make(
+            env_id,
+            obs_type='rgb',
+            frameskip=1,
+            repeat_action_probability=repeat_action_probability,
+            full_action_space=full_action_space,
+            render_mode=None,
+        )
 
         # Avoid unnecessary rendering in inner env.
-        self.env._get_obs = lambda: None
-
-        # Tell wrapper that the inner env has no action repeat.
-        self.env.spec = gym.envs.registration.EnvSpec('NoFrameskip-v0')
+        self.env.unwrapped._get_obs = lambda: None
 
         # Standard Preprocessing
-        self.env = gym.wrappers.AtariPreprocessing(env=self.env, noop_max=noop_max, frame_skip=action_repeat, screen_size=img_size[0], terminal_on_life_loss=terminal_on_life_loss, grayscale_obs=grayscale_obs)
+        self.env = gymnasium.wrappers.AtariPreprocessing(env=self.env, noop_max=noop_max, frame_skip=action_repeat, screen_size=img_size[0], terminal_on_life_loss=terminal_on_life_loss, grayscale_obs=grayscale_obs)
 
         # Params
         self.episode_saving_path = episode_saving_path
@@ -119,8 +157,7 @@ class AtariEnv:
         self.fps = 60.0 / self.action_repeat
 
     def seed(self, seed):
-        if seed:
-            self.env.seed(seed)
+        self._seed = seed
 
     def sample(self):
 
@@ -129,7 +166,7 @@ class AtariEnv:
     def preprocess(self, state, reward, done):
 
         # To tensor
-        state = torch.tensor(state) 
+        state = torch.tensor(state)
 
         # (C, H, W)
         if self.grayscale_obs:
@@ -145,7 +182,7 @@ class AtariEnv:
 
         # Is_last
         if self.terminal_on_life_loss:
-            is_last = torch.tensor(self.env.env.ale.game_over(), dtype=torch.float32)
+            is_last = torch.tensor(self.env.unwrapped.ale.game_over(), dtype=torch.float32)
         else:
             is_last = done
 
@@ -154,8 +191,13 @@ class AtariEnv:
     def reset(self):
 
         # Reset
-        state, _, _, _ = self.preprocess(self.env.reset(), 0, 0)
-        
+        reset_kwargs = {}
+        if self._seed is not None:
+            reset_kwargs['seed'] = self._seed
+            self._seed = None  # Only use seed on first reset
+        obs, _info = self.env.reset(**reset_kwargs)
+        state, _, _, _ = self.preprocess(obs, 0, 0)
+
         # Episode videos
         if self.episode_saving_path is not None:
             self.episode_video = []
@@ -189,14 +231,15 @@ class AtariEnv:
     def step(self, action):
 
         # Env Step
-        state, reward, done, infos = self.env.step(action.item())
+        state, reward, terminated, truncated, infos = self.env.step(action.item())
+        done = terminated or truncated
 
         # Update Episode Score
         self.episode_score += reward
 
         # Add to video
         if self.episode_saving_path is not None:
-            self.episode_video.append(torch.tensor(self.env.env._get_image()))
+            self.episode_video.append(torch.tensor(self.env.unwrapped.ale.getScreenRGB()))
             self.episode_video_pre.append(torch.tensor(state))
 
         # Save Episode
