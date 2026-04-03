@@ -26,6 +26,8 @@ import functions
 
 # Other
 import os
+import random
+import numpy as np
 import argparse
 import importlib
 import warnings
@@ -33,11 +35,23 @@ import warnings
 # Disable Warnings
 warnings.filterwarnings("ignore")
 
+def seed_everything(seed):
+    """Seed all RNG sources for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
 def main(args):
 
     ###############################################################################
     # Init
     ###############################################################################
+
+    # Seed
+    if args.seed is not None:
+        seed_everything(args.seed)
+        print("Seed: {}".format(args.seed))
 
     # Print Mode
     print("Mode: {}".format(args.mode))
@@ -121,6 +135,9 @@ if __name__ == "__main__":
     parser.add_argument("--show_dict",                  action="store_true",                                                            help="Show model dict summary")
     parser.add_argument("--show_modules",               action="store_true",                                                            help="Show model named modules")
     
+    # Reproducibility
+    parser.add_argument("--seed",                       type=int,   default=None,                                                       help="Global random seed for reproducibility")
+
     # Debug
     parser.add_argument("--detect_anomaly",             action="store_true",                                                            help="Enable or disable the autograd anomaly detection")
     
