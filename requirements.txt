@@ -1,0 +1,12 @@
+gymnasium>=1.0.0
+ale-py>=0.8.1
+AutoROM[accept-rom-license]>=0.6.1
+opencv-python>=4.9.0
+dm_control>=1.0.14
+torch>=2.1.2
+torchvision>=0.16.2
+numpy>=1.26.4
+tqdm
+wandb
+av
+tensorboard
