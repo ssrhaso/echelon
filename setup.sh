@@ -11,7 +11,7 @@ if [[ "${1:-}" == "--vast" ]]; then
 
     apt-get update && apt-get install -y --no-install-recommends \
         python3.12 python3.12-venv python3.12-dev \
-        libgl1-mesa-glx mesa-utils \
+        libgl1 mesa-utils \
         unrar wget git ffmpeg \
         libosmesa6-dev libglew-dev patchelf
 
