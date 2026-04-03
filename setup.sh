@@ -1,8 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# ECHELON Setup 
-=
+# ECHELON Setup
 # Usage
 #   ./setup.sh          - pip install + ROMs only (local dev)
 #   ./setup.sh --vast   - full Vast.ai provisioning (system deps + venv + install)
