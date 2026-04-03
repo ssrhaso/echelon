@@ -30,10 +30,10 @@ def _stub(*names):
             sys.modules[name] = types.ModuleType(name)
 
 
-_stub("gym", "gym.envs", "gym.envs.atari", "gym.envs.registration", "gym.wrappers")
-sys.modules["gym"].envs = sys.modules["gym.envs"]
-sys.modules["gym.envs"].atari        = sys.modules["gym.envs.atari"]
-sys.modules["gym.envs"].registration = sys.modules["gym.envs.registration"]
+_stub("ale_py", "gymnasium", "gymnasium.wrappers")
+_gym = sys.modules["gymnasium"]
+_gym.wrappers = sys.modules["gymnasium.wrappers"]
+_gym.register_envs = lambda *a: None
 
 _stub("dm_control", "dm_control.suite", "dm_control.suite.wrappers")
 sys.modules["dm_control"].suite = sys.modules["dm_control.suite"]
