@@ -130,6 +130,7 @@ class AtariEnv:
             repeat_action_probability=repeat_action_probability,
             full_action_space=full_action_space,
             render_mode=None,
+            disable_env_checker=True,
         )
 
         # Avoid unnecessary rendering in inner env.
