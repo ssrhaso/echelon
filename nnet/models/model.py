@@ -634,6 +634,7 @@ class Model(modules.Module):
         detect_anomaly=False, 
         recompute_metrics=False,
         wandb_logging=False,
+        wandb_name=None,
         verbose_progress_bar=1,
         keep_last_k=None
     ):
@@ -641,7 +642,7 @@ class Model(modules.Module):
         # Init wandb
         if callback_path is not None and wandb_logging:
             try:
-                wandb.init(project='nnet', sync_tensorboard=True, name=callback_path)
+                wandb.init(project='nnet', sync_tensorboard=True, name=wandb_name or callback_path)
             except Exception as e:
                 print(str(e))
 
