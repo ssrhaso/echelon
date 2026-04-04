@@ -92,6 +92,7 @@ def main(args):
             detect_anomaly=getattr(args.config, "detect_anomaly", args.detect_anomaly),
             recompute_metrics=getattr(args.config, "recompute_metrics", False),
             wandb_logging=args.wandb,
+            wandb_name=args.wandb_name,
             verbose_progress_bar=args.verbose_progress_bar,
             keep_last_k=args.keep_last_k
         )
@@ -120,6 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--cpu",                        action="store_true",                                                            help="Load model on cpu")
     parser.add_argument("--load_last",                  action="store_true",                                                            help="Load last model checkpoint")
     parser.add_argument("--wandb",                      action="store_true",                                                            help="Initialize wandb logging")
+    parser.add_argument("--wandb_name",                 type=str,   default=None,                                                       help="Custom W&B run name")
     parser.add_argument("--verbose_progress_bar",       type=int,   default=1,                                                          help="Verbose level of progress bar display")
 
     # Training
