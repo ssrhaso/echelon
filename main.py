@@ -92,7 +92,13 @@ def main(args):
             detect_anomaly=getattr(args.config, "detect_anomaly", args.detect_anomaly),
             recompute_metrics=getattr(args.config, "recompute_metrics", False),
             wandb_logging=args.wandb,
-            wandb_name=args.wandb_name,
+            wandb_name=args.wandb_name or (
+                "{}/{}/seed{}".format(
+                    os.environ.get("run_name", "run"),
+                    os.environ.get("env_name", "env").split("-", 1)[-1],
+                    args.seed
+                ) if args.seed is not None else None
+            ),
             verbose_progress_bar=args.verbose_progress_bar,
             keep_last_k=args.keep_last_k
         )
