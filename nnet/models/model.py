@@ -775,6 +775,7 @@ class Model(modules.Module):
                 # Logs Epoch
                 if writer is not None:
                     self.log_step(losses=epoch_losses, metrics=epoch_metrics, infos={}, writer=writer, step=epoch + 1, tag="Training-epoch")
+                    writer.add_scalar("Training-epoch/epoch", epoch + 1, epoch + 1)
 
                 # On Epoch End
                 self.on_epoch_end(
