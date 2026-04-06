@@ -472,6 +472,15 @@ class Model(modules.Module):
         # Print Model state
         print("Model saved at step {}: {}".format(self.model_step, path))
 
+        # Log checkpoint to W&B
+        if wandb.run is not None:
+            artifact = wandb.Artifact(
+                name="checkpoint-step-{}".format(self.model_step),
+                type="model",
+            )
+            artifact.add_file(path)
+            wandb.log_artifact(artifact)
+
         # Keep last k checkpoints
         if keep_last_k != None:
 
