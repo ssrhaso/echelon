@@ -379,7 +379,7 @@ class TWISTER(models.Model):
         # Log checkpoint to W&B
         if wandb.run is not None:
             artifact = wandb.Artifact(
-                name="checkpoint-step-{}".format(self.model_step),
+                name="checkpoint-step-{}".format(int(self.model_step)),
                 type="model",
             )
             artifact.add_file(path)
