@@ -54,6 +54,17 @@ class VectorQuantizerEMA(nn.Module):
         self.register_buffer("ema_embedding_sum", embedding.clone())
         self.register_buffer("update_count", torch.tensor(0))
 
+        # Freeze flag: when True, skip EMA updates and zero commitment loss
+        self.frozen = False
+
+    def freeze(self):
+        """Freeze this codebook: disable EMA updates and commitment loss."""
+        self.frozen = True
+
+    def unfreeze(self):
+        """Unfreeze this codebook: re-enable EMA updates and commitment loss."""
+        self.frozen = False
+
     def _ema_update(
         self, z_flat: torch.Tensor,
         indices: torch.Tensor
@@ -123,11 +134,14 @@ class VectorQuantizerEMA(nn.Module):
             indices = distances.argmin(dim=1)
             z_q = self.embedding[indices]
 
-        if self.training:
+        if self.training and not self.frozen:
             self._ema_update(z_flat.detach(), indices)
             self._revive_dead_codes(z_flat.detach())
 
-        commitment_loss = self.commitment_cost * F.mse_loss(z_flat, z_q.detach())
+        if self.frozen:
+            commitment_loss = torch.tensor(0.0, device=z_flat.device, dtype=z_flat.dtype)
+        else:
+            commitment_loss = self.commitment_cost * F.mse_loss(z_flat, z_q.detach())
 
         z_q_st = z_flat + (z_q - z_flat).detach()
 
@@ -258,3 +272,13 @@ class HRVQ(nn.Module):
             stats[f"usage_{level}"] = unique_codes / total_codes
             stats[f"perplexity_{level}"] = perplexity.item()
         return stats
+
+    def freeze_levels(self, levels: list[int]):
+        """Freeze specified quantizer levels (disable EMA updates and commitment loss)."""
+        for level in levels:
+            assert 0 <= level < self.num_levels, f"Level {level} out of range [0, {self.num_levels})"
+            self.quantizers[level].freeze()
+
+    def get_frozen_levels(self) -> list[int]:
+        """Return list of frozen level indices."""
+        return [i for i in range(self.num_levels) if self.quantizers[i].frozen]

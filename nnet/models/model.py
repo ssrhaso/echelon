@@ -655,6 +655,13 @@ class Model(modules.Module):
             except Exception as e:
                 print(str(e))
 
+        # Log freeze/transfer config to wandb
+        if wandb.run is not None:
+            wandb.config.update({
+                "freeze_levels": getattr(self, '_freeze_levels', None),
+                "transfer_source": getattr(self, '_transfer_source', None),
+            }, allow_val_change=True)
+
         # Is Compiled
         if not self.compiled:
             raise Exception("You must compile your model before training/testing.")

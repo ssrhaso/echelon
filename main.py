@@ -64,6 +64,29 @@ def main(args):
     # Load Model
     model = functions.load_model(args)
 
+    # Codebook Cross-Transfer and Freezing
+    if args.transfer_checkpoint is not None or args.freeze_levels is not None:
+        from nnet.modules.twister.hrvq.transfer import load_and_transfer_codebooks, print_parameter_audit
+
+        freeze_levels = [int(x) for x in args.freeze_levels.split(",")] if args.freeze_levels else []
+
+        # Cross-transfer: load VQ codebooks from external checkpoint
+        if args.transfer_checkpoint is not None:
+            transfer_levels = freeze_levels if freeze_levels else [0, 1, 2]
+            load_and_transfer_codebooks(model, args.transfer_checkpoint, transfer_levels)
+
+        # Freeze specified VQ levels
+        if freeze_levels:
+            model.encoder_network.hrvq.freeze_levels(freeze_levels)
+            print(f"Frozen VQ levels: {freeze_levels}")
+
+        # Parameter audit
+        print_parameter_audit(model)
+
+        # Store freeze/transfer metadata for W&B logging
+        model._freeze_levels = args.freeze_levels
+        model._transfer_source = args.transfer_checkpoint
+
     # Load Dataset
     dataset_train, dataset_eval = functions.load_datasets(args)
 
@@ -147,6 +170,10 @@ if __name__ == "__main__":
     
     # Reproducibility
     parser.add_argument("--seed",                       type=int,   default=None,                                                       help="Global random seed for reproducibility")
+
+    # Codebook Freezing / Transfer
+    parser.add_argument("--freeze_levels",              type=str,   default=None,                                                       help="Comma-separated VQ levels to freeze, e.g. '0,1'")
+    parser.add_argument("--transfer_checkpoint",        type=str,   default=None,                                                       help="Path to checkpoint for VQ codebook cross-transfer")
 
     # Debug
     parser.add_argument("--detect_anomaly",             action="store_true",                                                            help="Enable or disable the autograd anomaly detection")
