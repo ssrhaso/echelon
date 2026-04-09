@@ -378,12 +378,15 @@ class TWISTER(models.Model):
 
         # Log checkpoint to W&B
         if wandb.run is not None:
-            artifact = wandb.Artifact(
-                name="checkpoint-step-{}".format(int(self.model_step)),
-                type="model",
-            )
-            artifact.add_file(path)
-            wandb.log_artifact(artifact)
+            try:
+                artifact = wandb.Artifact(
+                    name="checkpoint-step-{}".format(int(self.model_step)),
+                    type="model",
+                )
+                artifact.add_file(path)
+                wandb.log_artifact(artifact)
+            except OSError as e:
+                print("Warning: Failed to log checkpoint artifact to W&B: {}".format(e))
 
         # Keep last k checkpoints
         if keep_last_k != None:
