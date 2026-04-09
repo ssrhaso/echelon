@@ -31,7 +31,6 @@ from nnet.structs import AttrDict
 import copy
 import itertools
 import os
-import glob
 
 class TWISTER(models.Model):
 
@@ -359,8 +358,13 @@ class TWISTER(models.Model):
 
         return state
 
-    def save(self, path, save_optimizer=True, keep_last_k=None):
-        
+    def save(self, path, save_optimizer=True):
+
+        # Ensure save directory exists
+        save_dir = os.path.dirname(path)
+        if save_dir and not os.path.isdir(save_dir):
+            os.makedirs(save_dir, exist_ok=True)
+
         # Save Model Checkpoint
         torch.save({
             "model_state_dict": self.state_dict(),
@@ -369,41 +373,23 @@ class TWISTER(models.Model):
             "grad_scaler_state_dict": self.grad_scaler.state_dict() if hasattr(self, "grad_scaler") else None,
             "replay_buffer_state_dict": self.replay_buffer.state_dict()
         }, path)
-        
-        # Save Buffer
-        self.replay_buffer.save()
 
         # Print Model state
         print("Model saved at step {}: {}".format(self.model_step, path))
 
-        # Log checkpoint to W&B
+        # Log best checkpoint to W&B
         if wandb.run is not None:
             artifact = wandb.Artifact(
-                name="checkpoint-step-{}".format(int(self.model_step)),
+                name="best-checkpoint",
                 type="model",
             )
             artifact.add_file(path)
             wandb.log_artifact(artifact)
 
-        # Keep last k checkpoints
-        if keep_last_k != None:
-
-            # List checkpoints
-            save_dir = os.path.dirname(path)
-            checkpoints_list = glob.glob(os.path.join(save_dir, "*.ckpt"))
-            checkpoints_list = sorted(checkpoints_list, key=lambda s: int(os.path.splitext(s)[0].split("/")[-1].split("_")[-1]))
-
-            # Remove older_checkpoint
-            while len(checkpoints_list) > keep_last_k:
-
-                # Pop older_checkpoint
-                older_checkpoint = checkpoints_list.pop(0)
-
-                # Remove older_checkpoint
-                os.remove(older_checkpoint)
-
-                # Print
-                print("Removed old checkpoint {}".format(older_checkpoint))
+        # Remove local checkpoint
+        if os.path.isfile(path):
+            os.remove(path)
+            print("Removed local checkpoint: {}".format(path))
 
     def load(self, path, load_optimizer=True, verbose=True, strict=True):
 

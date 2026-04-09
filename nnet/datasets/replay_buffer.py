@@ -81,6 +81,10 @@ class ReplayBuffer(datasets.Dataset):
         # Save Trajs
         if self.save_trajectories:
 
+            # Ensure Buffer Dir Exists
+            if not os.path.isdir(self.buffer_dir):
+                os.makedirs(self.buffer_dir, exist_ok=True)
+
             # Select Trajs
             save_trajs = {traj_id:self.ram_buffer[traj_id] for traj_id in range(self.last_save_traj_index, self.traj_index)}
 

@@ -122,8 +122,7 @@ def main(args):
                     args.seed
                 ) if args.seed is not None else None
             ),
-            verbose_progress_bar=args.verbose_progress_bar,
-            keep_last_k=args.keep_last_k
+            verbose_progress_bar=args.verbose_progress_bar
         )
 
     # Evaluation
