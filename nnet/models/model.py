@@ -21,7 +21,6 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os
 import time
-import glob
 import wandb
 
 # Neural Nets
@@ -459,8 +458,13 @@ class Model(modules.Module):
         for id, (key, value) in enumerate(named_modules.items()):
             print("{} {} class: {} device: {}".format(str(id) + " " * (max_len_id - len(str(id))), key + " " * (max_len_key - len(key)), type(value).__name__ + " " * (max_len_class - len(type(value).__name__)), value.device if hasattr(value, "device") else ""))
 
-    def save(self, path, save_optimizer=True, keep_last_k=None):
-        
+    def save(self, path, save_optimizer=True):
+
+        # Ensure save directory exists
+        save_dir = os.path.dirname(path)
+        if save_dir and not os.path.isdir(save_dir):
+            os.makedirs(save_dir, exist_ok=True)
+
         # Save Model Checkpoint
         torch.save({
             "model_state_dict": self.state_dict(),
@@ -472,34 +476,19 @@ class Model(modules.Module):
         # Print Model state
         print("Model saved at step {}: {}".format(self.model_step, path))
 
-        # Log checkpoint to W&B
+        # Log best checkpoint to W&B
         if wandb.run is not None:
             artifact = wandb.Artifact(
-                name="checkpoint-step-{}".format(int(self.model_step)),
+                name="best-checkpoint",
                 type="model",
             )
             artifact.add_file(path)
             wandb.log_artifact(artifact)
 
-        # Keep last k checkpoints
-        if keep_last_k != None:
-
-            # List checkpoints
-            save_dir = os.path.dirname(path)
-            checkpoints_list = glob.glob(os.path.join(save_dir, "*.ckpt"))
-            checkpoints_list = sorted(checkpoints_list, key=lambda s: int(os.path.splitext(s)[0].split("/")[-1].split("_")[-1]))
-
-            # Remove older_checkpoint
-            while len(checkpoints_list) > keep_last_k:
-
-                # Pop older_checkpoint
-                older_checkpoint = checkpoints_list.pop(0)
-
-                # Remove older_checkpoint
-                os.remove(older_checkpoint)
-
-                # Print
-                print("Removed old checkpoint: {}".format(older_checkpoint))
+        # Remove local checkpoint
+        if os.path.isfile(path):
+            os.remove(path)
+            print("Removed local checkpoint: {}".format(path))
 
     def load(self, path, load_optimizer=True, verbose=True, strict=True):
 
@@ -539,22 +528,30 @@ class Model(modules.Module):
     def on_epoch_begin(self, epoch):
         pass
 
-    def on_epoch_end(self, evaluate, save, log_figure, callback_path, epoch, inputs, targets, dataset_eval, eval_steps, verbose_eval, writer, recompute_metrics, keep_last_k):
-        self.on_step_end(evaluate, save, log_figure, callback_path, epoch, epoch, inputs, targets, dataset_eval, eval_steps, verbose_eval, writer, recompute_metrics, keep_last_k=keep_last_k, tag="epoch")
+    def on_epoch_end(self, evaluate, save, log_figure, callback_path, epoch, inputs, targets, dataset_eval, eval_steps, verbose_eval, writer, recompute_metrics):
+        self.on_step_end(evaluate, save, log_figure, callback_path, epoch, epoch, inputs, targets, dataset_eval, eval_steps, verbose_eval, writer, recompute_metrics, tag="epoch")
 
         # Print
         print()
 
-    def on_step_end(self, evaluate, save, log_figure, callback_path, epoch, step, inputs, targets, dataset_eval, eval_steps, verbose_eval, writer, recompute_metrics, keep_last_k, tag="step"):
+    def on_step_end(self, evaluate, save, log_figure, callback_path, epoch, step, inputs, targets, dataset_eval, eval_steps, verbose_eval, writer, recompute_metrics, tag="step"):
 
         # Evaluate Model
+        eval_metrics = {}
         if evaluate:
-            self._evaluate(dataset_eval, writer, eval_steps, verbose_eval, recompute_metrics, tag="Evaluation-" + tag)
+            eval_metrics = self._evaluate(dataset_eval, writer, eval_steps, verbose_eval, recompute_metrics, tag="Evaluation-" + tag)
             self.train()
 
-        # Save Checkpoint
-        if save and callback_path:
-            self.save(os.path.join(callback_path, "checkpoints_epoch_{}_step_{}.ckpt".format(epoch, self.model_step)), keep_last_k=keep_last_k)
+        # Save Checkpoint (only if best score)
+        if save and callback_path and eval_metrics:
+            mean_score = eval_metrics.get("score", None)
+            if mean_score is not None:
+                if not hasattr(self, "_best_score") or mean_score > self._best_score:
+                    self._best_score = mean_score
+                    self.save(os.path.join(callback_path, "best.ckpt"))
+                    print("New best score: {:.2f}".format(mean_score))
+                else:
+                    print("Score {:.2f} did not improve over best {:.2f}, skipping save.".format(mean_score, self._best_score))
 
         # Log Figure
         if log_figure and callback_path:
@@ -644,8 +641,7 @@ class Model(modules.Module):
         recompute_metrics=False,
         wandb_logging=False,
         wandb_name=None,
-        verbose_progress_bar=1,
-        keep_last_k=None
+        verbose_progress_bar=1
     ):
         
         # Init wandb
@@ -771,8 +767,7 @@ class Model(modules.Module):
                         eval_steps=eval_steps, 
                         verbose_eval=verbose_eval,
                         writer=writer,
-                        recompute_metrics=recompute_metrics,
-                        keep_last_k=keep_last_k
+                        recompute_metrics=recompute_metrics
                     )
 
                     # Step per Epoch
@@ -806,8 +801,7 @@ class Model(modules.Module):
                     eval_steps=eval_steps, 
                     verbose_eval=verbose_eval,
                     writer=writer,
-                    recompute_metrics=recompute_metrics,
-                    keep_last_k=keep_last_k
+                    recompute_metrics=recompute_metrics
                 )
 
         # Exception Handler
@@ -819,8 +813,9 @@ class Model(modules.Module):
             raise e
 
     def _evaluate(self, dataset, writer, eval_steps=None, verbose=0, recompute_metrics=False, tag="Evaluation", verbose_progress_bar=1):
-        
+
         # Evaluation Dataset
+        all_metrics = {}
         if dataset is not None:
 
             # Dataset to list
@@ -839,6 +834,11 @@ class Model(modules.Module):
                 # Log
                 if writer is not None:
                     self.log_step(losses=val_losses, metrics=val_metrics, infos={}, writer=writer, step=self.model_step, tag=os.path.join(tag, str(dataset_i)))
+
+                # Collect metrics
+                all_metrics.update(val_metrics)
+
+        return all_metrics
 
     def evaluate(self, dataset_eval, eval_steps=None, verbose=0, recompute_metrics=False, verbose_progress_bar=1):
 
