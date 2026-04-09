@@ -476,19 +476,19 @@ class Model(modules.Module):
         # Print Model state
         print("Model saved at step {}: {}".format(self.model_step, path))
 
-        # Log best checkpoint to W&B
+        # Log best checkpoint to W&B and remove local file
         if wandb.run is not None:
             artifact = wandb.Artifact(
                 name="best-checkpoint",
                 type="model",
             )
             artifact.add_file(path)
-            wandb.log_artifact(artifact)
-
-        # Remove local checkpoint
-        if os.path.isfile(path):
+            logged = wandb.log_artifact(artifact)
+            logged.wait()
             os.remove(path)
-            print("Removed local checkpoint: {}".format(path))
+            print("Uploaded to W&B and removed local checkpoint: {}".format(path))
+        else:
+            print("Warning: wandb not active, checkpoint kept locally at {}".format(path))
 
     def load(self, path, load_optimizer=True, verbose=True, strict=True):
 

@@ -34,7 +34,8 @@ training_dataset = nnet.datasets.ReplayBuffer(
     root=callback_path,
     buffer_capacity=model.config.buffer_capacity,
     epoch_length=epoch_length,
-    sample_length=model.config.L
+    sample_length=model.config.L,
+    save_trajectories=False
 )
 model.set_replay_buffer(training_dataset)
 
