@@ -358,38 +358,38 @@ class TWISTER(models.Model):
 
         return state
 
-    def save(self, path, save_optimizer=True):
+    def save(self, path):
 
         # Ensure save directory exists
         save_dir = os.path.dirname(path)
         if save_dir and not os.path.isdir(save_dir):
             os.makedirs(save_dir, exist_ok=True)
 
-        # Save Model Checkpoint
+        # Save Model Checkpoint (weights only — no optimizer/buffer for one-shot runs)
         torch.save({
             "model_state_dict": self.state_dict(),
-            "optimizer_state_dict": None if not save_optimizer else {key: value.state_dict() for key, value in self.optimizer.items()} if isinstance(self.optimizer, dict) else self.optimizer.state_dict(),
             "model_step": self.model_step,
-            "grad_scaler_state_dict": self.grad_scaler.state_dict() if hasattr(self, "grad_scaler") else None,
-            "replay_buffer_state_dict": self.replay_buffer.state_dict()
+            "optimizer_state_dict": None,
+            "replay_buffer_state_dict": None,
+            "grad_scaler_state_dict": None,
         }, path)
 
         # Print Model state
         print("Model saved at step {}: {}".format(self.model_step, path))
 
-        # Log best checkpoint to W&B
+        # Log best checkpoint to W&B and remove local file
         if wandb.run is not None:
             artifact = wandb.Artifact(
                 name="best-checkpoint",
                 type="model",
             )
             artifact.add_file(path)
-            wandb.log_artifact(artifact)
-
-        # Remove local checkpoint
-        if os.path.isfile(path):
+            logged = wandb.log_artifact(artifact)
+            logged.wait()
             os.remove(path)
-            print("Removed local checkpoint: {}".format(path))
+            print("Uploaded to W&B and removed local checkpoint: {}".format(path))
+        else:
+            print("Warning: wandb not active, checkpoint kept locally at {}".format(path))
 
     def load(self, path, load_optimizer=True, verbose=True, strict=True):
 
@@ -416,10 +416,10 @@ class TWISTER(models.Model):
             self.model_step.fill_(checkpoint["model_step"])
 
         # Load replay Buffer State Dict
-        if self.config.load_replay_buffer_state_dict:
+        if self.config.load_replay_buffer_state_dict and checkpoint.get("replay_buffer_state_dict") is not None:
             self.replay_buffer.load_state_dict(checkpoint["replay_buffer_state_dict"])
         elif verbose:
-            print("load_replay_buffer_state_dict set to False: replay buffer state dict not loaded")
+            print("Replay buffer state dict not loaded")
 
         # Load Grad Scaler
         if "grad_scaler_state_dict" in checkpoint:
