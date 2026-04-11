@@ -655,6 +655,7 @@ class Model(modules.Module):
         if wandb.run is not None:
             wandb.config.update({
                 "freeze_levels": getattr(self, '_freeze_levels', None),
+                "freeze_encoder": getattr(self, '_freeze_encoder', False),
                 "transfer_source": getattr(self, '_transfer_source', None),
             }, allow_val_change=True)
 
