@@ -17,7 +17,13 @@
 import torch
 
 
-def load_and_transfer_codebooks(model, checkpoint_path, levels):
+def _load_source_state(model, checkpoint_path):
+    """Load and cache source checkpoint state dict (avoids redundant disk reads)."""
+    checkpoint = torch.load(checkpoint_path, map_location=model.device, weights_only=False)
+    return checkpoint["model_state_dict"]
+
+
+def load_and_transfer_codebooks(model, checkpoint_path, levels, source_state=None):
     """Load VQ codebook buffers from an external checkpoint into the model.
 
     Transfers embedding, ema_cluster_size, ema_embedding_sum, and update_count
@@ -28,9 +34,10 @@ def load_and_transfer_codebooks(model, checkpoint_path, levels):
         model: TWISTER model instance.
         checkpoint_path: Path to source checkpoint (.ckpt file).
         levels: List of VQ level indices to transfer (e.g. [0, 1, 2]).
+        source_state: Pre-loaded state dict (optional, avoids redundant disk read).
     """
-    checkpoint = torch.load(checkpoint_path, map_location=model.device, weights_only=False)
-    source_state = checkpoint["model_state_dict"]
+    if source_state is None:
+        source_state = _load_source_state(model, checkpoint_path)
 
     buffer_names = ["embedding", "ema_cluster_size", "ema_embedding_sum", "update_count"]
     model_buffers = dict(model.named_buffers())
@@ -44,7 +51,7 @@ def load_and_transfer_codebooks(model, checkpoint_path, levels):
         print(f"  Transferred VQ level {level} codebook from {checkpoint_path}")
 
 
-def load_and_transfer_encoder(model, checkpoint_path):
+def load_and_transfer_encoder(model, checkpoint_path, source_state=None):
     """Load encoder CNN weights from an external checkpoint into the model.
 
     Transfers all parameters and buffers of the encoder CNN (but not the HRVQ
@@ -53,9 +60,10 @@ def load_and_transfer_encoder(model, checkpoint_path):
     Args:
         model: TWISTER model instance.
         checkpoint_path: Path to source checkpoint (.ckpt file).
+        source_state: Pre-loaded state dict (optional, avoids redundant disk read).
     """
-    checkpoint = torch.load(checkpoint_path, map_location=model.device, weights_only=False)
-    source_state = checkpoint["model_state_dict"]
+    if source_state is None:
+        source_state = _load_source_state(model, checkpoint_path)
 
     cnn_prefix = "encoder_network.cnn."
     model_state = dict(model.named_parameters())
