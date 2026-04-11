@@ -44,6 +44,34 @@ def load_and_transfer_codebooks(model, checkpoint_path, levels):
         print(f"  Transferred VQ level {level} codebook from {checkpoint_path}")
 
 
+def load_and_transfer_encoder(model, checkpoint_path):
+    """Load encoder CNN weights from an external checkpoint into the model.
+
+    Transfers all parameters and buffers of the encoder CNN (but not the HRVQ
+    codebooks, which are handled by load_and_transfer_codebooks).
+
+    Args:
+        model: TWISTER model instance.
+        checkpoint_path: Path to source checkpoint (.ckpt file).
+    """
+    checkpoint = torch.load(checkpoint_path, map_location=model.device, weights_only=False)
+    source_state = checkpoint["model_state_dict"]
+
+    cnn_prefix = "encoder_network.cnn."
+    model_state = dict(model.named_parameters())
+    model_state.update(dict(model.named_buffers()))
+
+    transferred = 0
+    for key, value in source_state.items():
+        if key.startswith(cnn_prefix) and key in model_state:
+            model_state[key].data.copy_(value)
+            transferred += 1
+
+    if transferred == 0:
+        raise KeyError(f"No encoder CNN keys with prefix '{cnn_prefix}' found in: {checkpoint_path}")
+    print(f"  Transferred encoder CNN ({transferred} tensors) from {checkpoint_path}")
+
+
 def print_parameter_audit(model):
     """Print a table of total/trainable params and buffer counts by component.
 
@@ -77,6 +105,8 @@ def print_parameter_audit(model):
         frozen_flag = ""
         if hasattr(module, "frozen"):
             frozen_flag = "YES" if module.frozen else "no"
+        elif name == "encoder_cnn" and n_trainable == 0 and n_params > 0:
+            frozen_flag = "YES"
         print(f"{name:<20} {n_params:>10,} {n_trainable:>10,} {n_buffers:>10,} {frozen_flag:>8}")
         total_params += n_params
         total_trainable += n_trainable
