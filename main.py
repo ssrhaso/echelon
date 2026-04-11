@@ -65,8 +65,10 @@ def main(args):
     model = functions.load_model(args)
 
     # Codebook Cross-Transfer and Freezing
-    if args.transfer_checkpoint is not None or args.freeze_levels is not None:
-        from nnet.modules.twister.hrvq.transfer import load_and_transfer_codebooks, print_parameter_audit
+    if args.transfer_checkpoint is not None or args.freeze_levels is not None or args.freeze_encoder:
+        from nnet.modules.twister.hrvq.transfer import (
+            load_and_transfer_codebooks, load_and_transfer_encoder, print_parameter_audit
+        )
 
         freeze_levels = [int(x) for x in args.freeze_levels.split(",")] if args.freeze_levels else []
 
@@ -75,10 +77,20 @@ def main(args):
             transfer_levels = freeze_levels if freeze_levels else [0, 1, 2]
             load_and_transfer_codebooks(model, args.transfer_checkpoint, transfer_levels)
 
+            # Transfer encoder CNN weights alongside codebooks
+            if args.freeze_encoder:
+                load_and_transfer_encoder(model, args.transfer_checkpoint)
+
         # Freeze specified VQ levels
         if freeze_levels:
             model.encoder_network.hrvq.freeze_levels(freeze_levels)
             print(f"Frozen VQ levels: {freeze_levels}")
+
+        # Freeze encoder CNN
+        if args.freeze_encoder:
+            for p in model.encoder_network.cnn.parameters():
+                p.requires_grad_(False)
+            print("Frozen encoder CNN")
 
         # Parameter audit
         print_parameter_audit(model)
@@ -86,6 +98,7 @@ def main(args):
         # Store freeze/transfer metadata for W&B logging
         model._freeze_levels = args.freeze_levels
         model._transfer_source = args.transfer_checkpoint
+        model._freeze_encoder = args.freeze_encoder
 
     # Load Dataset
     dataset_train, dataset_eval = functions.load_datasets(args)
@@ -172,6 +185,7 @@ if __name__ == "__main__":
 
     # Codebook Freezing / Transfer
     parser.add_argument("--freeze_levels",              type=str,   default=None,                                                       help="Comma-separated VQ levels to freeze, e.g. '0,1'")
+    parser.add_argument("--freeze_encoder",             action="store_true",                                                            help="Freeze encoder CNN (use with --transfer_checkpoint to transfer+freeze)")
     parser.add_argument("--transfer_checkpoint",        type=str,   default=None,                                                       help="Path to checkpoint for VQ codebook cross-transfer")
 
     # Debug
