@@ -67,19 +67,25 @@ def main(args):
     # Codebook Cross-Transfer and Freezing
     if args.transfer_checkpoint is not None or args.freeze_levels is not None or args.freeze_encoder:
         from nnet.modules.twister.hrvq.transfer import (
-            load_and_transfer_codebooks, load_and_transfer_encoder, print_parameter_audit
+            _load_source_state, load_and_transfer_codebooks, load_and_transfer_encoder, print_parameter_audit
         )
 
         freeze_levels = [int(x) for x in args.freeze_levels.split(",")] if args.freeze_levels else []
 
-        # Cross-transfer: load VQ codebooks from external checkpoint
+        # Cross-transfer: load checkpoint once, pass state dict to both functions
         if args.transfer_checkpoint is not None:
+            source_state = _load_source_state(model, args.transfer_checkpoint)
+
             transfer_levels = freeze_levels if freeze_levels else [0, 1, 2]
-            load_and_transfer_codebooks(model, args.transfer_checkpoint, transfer_levels)
+            load_and_transfer_codebooks(model, args.transfer_checkpoint, transfer_levels, source_state)
 
             # Transfer encoder CNN weights alongside codebooks
             if args.freeze_encoder:
-                load_and_transfer_encoder(model, args.transfer_checkpoint)
+                load_and_transfer_encoder(model, args.transfer_checkpoint, source_state)
+
+            del source_state  # Free memory
+        elif args.freeze_encoder:
+            print("WARNING: --freeze_encoder without --transfer_checkpoint freezes the current encoder weights as-is")
 
         # Freeze specified VQ levels
         if freeze_levels:
