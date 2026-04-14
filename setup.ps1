@@ -1,4 +1,4 @@
-# ECHELON Windows Setup (university RTX 5070 PCs)
+# ECHELON Windows Setup
 #
 # Usage (from inside the extracted repo):
 #   powershell -ExecutionPolicy Bypass -File setup.ps1
