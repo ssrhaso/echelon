@@ -18,34 +18,34 @@ experiments:
     description: Transfer codebooks only, nothing frozen
     freeze_levels: null
     freeze_encoder: false
-    seeds: [0]
+    seeds: [0, 1, 2]
 
   - name: freeze-L0
     description: Transfer + freeze VQ level 0 (coarsest)
     freeze_levels: "0"
     freeze_encoder: false
-    seeds: [0]
+    seeds: [0, 1, 2]
 
   - name: freeze-L01
     description: Transfer + freeze VQ levels 0,1
     freeze_levels: "0,1"
     freeze_encoder: false
-    seeds: [0]
+    seeds: [0, 1, 2]
 
   - name: freeze-L012
     description: Transfer + freeze all VQ levels 0,1,2
     freeze_levels: "0,1,2"
     freeze_encoder: false
-    seeds: [0]
+    seeds: [0, 1, 2]
 
   - name: freeze-enc
     description: Transfer encoder CNN + freeze encoder (VQ trainable)
     freeze_levels: null
     freeze_encoder: true
-    seeds: [0]
+    seeds: [0, 1, 2]
 
   - name: freeze-all
     description: Full frozen backbone (encoder + all VQ levels)
     freeze_levels: "0,1,2"
     freeze_encoder: true
-    seeds: [0]
+    seeds: [0, 1, 2]
