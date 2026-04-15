@@ -1,0 +1,51 @@
+# Transfer-freezing sweep: Pong checkpoint -> Breakout
+# Consumed by setup_transfer.ps1
+
+transfer_checkpoint_artifact: haso-university-of-the-west-of-england/nnet/best-checkpoint:v50
+env_name: atari100k-breakout
+run_name: hrvq_transfer
+
+# Base flags applied to every launch
+base_args:
+  eval_period_epoch: 5
+  keep_last_k: 3
+
+# Each experiment runs once per seed in its `seeds` list.
+# freeze_levels: null | "0" | "0,1" | "0,1,2"
+# freeze_encoder: true | false
+experiments:
+  - name: warmstart
+    description: Transfer codebooks only, nothing frozen
+    freeze_levels: null
+    freeze_encoder: false
+    seeds: [0]
+
+  - name: freeze-L0
+    description: Transfer + freeze VQ level 0 (coarsest)
+    freeze_levels: "0"
+    freeze_encoder: false
+    seeds: [0]
+
+  - name: freeze-L01
+    description: Transfer + freeze VQ levels 0,1
+    freeze_levels: "0,1"
+    freeze_encoder: false
+    seeds: [0]
+
+  - name: freeze-L012
+    description: Transfer + freeze all VQ levels 0,1,2
+    freeze_levels: "0,1,2"
+    freeze_encoder: false
+    seeds: [0]
+
+  - name: freeze-enc
+    description: Transfer encoder CNN + freeze encoder (VQ trainable)
+    freeze_levels: null
+    freeze_encoder: true
+    seeds: [0]
+
+  - name: freeze-all
+    description: Full frozen backbone (encoder + all VQ levels)
+    freeze_levels: "0,1,2"
+    freeze_encoder: true
+    seeds: [0]
