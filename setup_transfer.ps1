@@ -15,13 +15,16 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "ECHELON transfer-freezing setup (Pong -> Breakout)" -ForegroundColor Cyan
 
-Write-Host "[1/7] Installing torch + torchvision (CUDA 12.8)..."
+# Pong checkpoint to transfer FROM (W&B artifact pinned to the seed5 Pong run)
+$PongArtifact = "haso-university-of-the-west-of-england/nnet/best-checkpoint:v50"
+
+Write-Host "[1/8] Installing torch + torchvision (CUDA 12.8)..."
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
-Write-Host "[2/7] Installing Atari + training deps..."
+Write-Host "[2/8] Installing Atari + training deps..."
 pip install gymnasium ale-py opencv-python wandb tqdm av tensorboard pyyaml autorom
 
-Write-Host "[3/7] Adding user Scripts dir to PATH for this session..."
+Write-Host "[3/8] Adding user Scripts dir to PATH for this session..."
 $userScripts = Join-Path $env:APPDATA "Python\Python313\Scripts"
 if (Test-Path $userScripts) {
     $env:PATH += ";$userScripts"
@@ -29,13 +32,13 @@ if (Test-Path $userScripts) {
     Write-Host "  (skipped, $userScripts does not exist)" -ForegroundColor Yellow
 }
 
-Write-Host "[4/7] Downloading Atari ROMs..."
+Write-Host "[4/8] Downloading Atari ROMs..."
 AutoROM --accept-license
 
-Write-Host "[5/7] Logging into Weights & Biases..."
+Write-Host "[5/8] Logging into Weights & Biases..."
 python -m wandb login
 
-Write-Host "[6/7] Patching nnet/envs/__init__.py to tolerate missing dm_control..."
+Write-Host "[6/8] Patching nnet/envs/__init__.py to tolerate missing dm_control..."
 $envInit = "nnet/envs/__init__.py"
 $content = Get-Content $envInit -Raw
 if ($content -notmatch "try:\s*\r?\n\s*from \. import dm_control") {
@@ -46,17 +49,32 @@ if ($content -notmatch "try:\s*\r?\n\s*from \. import dm_control") {
     Write-Host "  already patched, skipping."
 }
 
-Write-Host "[7/7] Disabling sleep/hibernate on AC..."
+Write-Host "[7/8] Disabling sleep/hibernate on AC..."
 powercfg /change standby-timeout-ac 0
 powercfg /change hibernate-timeout-ac 0
+
+Write-Host "[8/8] Downloading Pong checkpoint from W&B ($PongArtifact)..."
+python -c @"
+import wandb, shutil, os
+api = wandb.Api()
+art = api.artifact('$PongArtifact')
+d = art.download(root='transfer_ckpt')
+src = os.path.join(d, 'best.ckpt')
+dst = 'transfer_ckpt/pong_seed5_best.ckpt'
+if os.path.abspath(src) != os.path.abspath(dst):
+    shutil.copyfile(src, dst)
+print('DOWNLOADED:', dst)
+"@
+$env:TRANSFER_CKPT = (Resolve-Path "transfer_ckpt/pong_seed5_best.ckpt").Path
+Write-Host "  TRANSFER_CKPT = $env:TRANSFER_CKPT" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Setup complete" -ForegroundColor Green
 Write-Host ""
 Write-Host "=== Transfer-freezing launch commands (Pong -> Breakout) ===" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "First set the source checkpoint path:" -ForegroundColor Yellow
-Write-Host '  $env:TRANSFER_CKPT = "callbacks/hrvq/pong/seed0/checkpoints_swa_epoch_XXX_step_YYY.ckpt"'
+Write-Host "TRANSFER_CKPT is already set in this session to:" -ForegroundColor Yellow
+Write-Host "  $env:TRANSFER_CKPT"
 Write-Host ""
 Write-Host "Common env vars for every run:" -ForegroundColor Yellow
 Write-Host '  $env:env_name = "atari100k-breakout"'
