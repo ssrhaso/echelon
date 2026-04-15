@@ -1,12 +1,12 @@
 # ECHELON Transfer-Freezing Experiment Setup (Pong -> Breakout)
 #
-# Usage (from inside the extracted repo):
-#   powershell -ExecutionPolicy Bypass -File setup_transfer.ps1              # setup + print commands
-#   powershell -ExecutionPolicy Bypass -File setup_transfer.ps1 -Run         # setup + run ALL experiments
-#   powershell -ExecutionPolicy Bypass -File setup_transfer.ps1 -Only freeze-L0   # setup + run one
-#   powershell -ExecutionPolicy Bypass -File setup_transfer.ps1 -SkipSetup -Run   # skip env setup, just run
+# Usage (run from anywhere - the script chdirs to the repo root):
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1              # setup + print commands
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Run         # setup + run ALL experiments
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Only freeze-L0   # setup + run one
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -SkipSetup -Run   # skip env setup, just run
 #
-# Experiment definitions live in experiments.yaml.
+# Experiment definitions live in experiments\transfer_freezing.yaml.
 
 param(
     [switch]$Run,
@@ -18,9 +18,16 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "ECHELON transfer-freezing setup (Pong -> Breakout)" -ForegroundColor Cyan
 
+# Resolve repo root (parent of this script's folder) and chdir there so all
+# relative paths (nnet/, main.py, transfer_ckpt/) resolve correctly no matter
+# where the script was invoked from.
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+Set-Location $RepoRoot
+Write-Host "Repo root: $RepoRoot" -ForegroundColor DarkGray
+
 # Pong checkpoint to transfer FROM (W&B artifact pinned to the seed5 Pong run)
 $PongArtifact = "haso-university-of-the-west-of-england/nnet/best-checkpoint:v50"
-$ConfigFile = "experiments.yaml"
+$ConfigFile = Join-Path $PSScriptRoot "transfer_freezing.yaml"
 
 if (-not $SkipSetup) {
 
@@ -47,7 +54,7 @@ if (-not $SkipSetup) {
         try {
             python -m AutoROM --accept-license
         } catch {
-            Write-Host "  AutoROM still failing — continuing anyway. Install ROMs manually if training errors." -ForegroundColor Red
+            Write-Host "  AutoROM still failing - continuing anyway. Install ROMs manually if training errors." -ForegroundColor Red
         }
     }
 
@@ -86,11 +93,12 @@ print('DOWNLOADED:', dst)
 $env:TRANSFER_CKPT = (Resolve-Path "transfer_ckpt/pong_seed5_best.ckpt").Path
 Write-Host "  TRANSFER_CKPT = $env:TRANSFER_CKPT" -ForegroundColor Green
 
-# ---- Parse experiments.yaml via python and emit a flat job list ----
+# ---- Parse experiments YAML via python and emit a flat job list ----
 # Each line: <exp_name>|<seed>|<freeze_levels_or_empty>|<freeze_encoder 0|1>|<env_name>|<run_name>|<eval_period>|<keep_last_k>|<description>
+$ConfigFileFwd = $ConfigFile -replace '\\', '/'
 $parser = @"
 import yaml, sys
-cfg = yaml.safe_load(open('$ConfigFile'))
+cfg = yaml.safe_load(open('$ConfigFileFwd'))
 env_name = cfg['env_name']
 run_name = cfg['run_name']
 base = cfg.get('base_args', {})
@@ -186,8 +194,8 @@ if ($Run -or $Only -ne "") {
     Write-Host "All experiments finished." -ForegroundColor Green
 } else {
     Write-Host "Launch commands (copy-paste one, or re-run with -Run / -Only <name>):" -ForegroundColor Cyan
-    Write-Host '  $env:env_name = "' + $env:env_name + '"'
-    Write-Host '  $env:run_name = "' + $env:run_name + '"'
+    Write-Host "  `$env:env_name = `"$env:env_name`""
+    Write-Host "  `$env:run_name = `"$env:run_name`""
     Write-Host ""
     foreach ($job in $jobs) {
         $launchArgs = Get-LaunchArgs $job
