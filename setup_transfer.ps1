@@ -33,7 +33,17 @@ if (Test-Path $userScripts) {
 }
 
 Write-Host "[4/8] Downloading Atari ROMs..."
-AutoROM --accept-license
+try {
+    AutoROM --accept-license
+} catch {
+    Write-Host "  AutoROM failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "  Retrying via python -m AutoROM..." -ForegroundColor Yellow
+    try {
+        python -m AutoROM --accept-license
+    } catch {
+        Write-Host "  AutoROM still failing — continuing anyway. Install ROMs manually if training errors." -ForegroundColor Red
+    }
+}
 
 Write-Host "[5/8] Logging into Weights & Biases..."
 python -m wandb login
