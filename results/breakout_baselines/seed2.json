@@ -1,0 +1,60 @@
+{
+  "name": "hrvq/atari100k/breakout/seed2",
+  "id": "uiarfzfk",
+  "state": "finished",
+  "runtime_h": 44.21,
+  "n_evals": 10,
+  "last_step": 58895,
+  "last_score": 55.83,
+  "max_score": 55.83,
+  "mean_last5": 35.62,
+  "trajectory": [
+    [
+      5899,
+      4.26
+    ],
+    [
+      11801,
+      18.51
+    ],
+    [
+      17689,
+      25.74
+    ],
+    [
+      23585,
+      6.67
+    ],
+    [
+      29477,
+      23.94
+    ],
+    [
+      35369,
+      20.48
+    ],
+    [
+      41251,
+      40.1
+    ],
+    [
+      47147,
+      33.22
+    ],
+    [
+      53013,
+      28.47
+    ],
+    [
+      58895,
+      55.83
+    ]
+  ],
+  "created_at": "2026-04-09T17:48:48Z",
+  "tags": [],
+  "_extra": {
+    "group": "breakout",
+    "condition": "baseline",
+    "seed": "seed2"
+  }
+}
