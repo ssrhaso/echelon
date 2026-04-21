@@ -1,0 +1,60 @@
+{
+  "name": "transfer/pongto/breakout/freeze-all/seed0",
+  "id": "liivlr1p",
+  "state": "finished",
+  "runtime_h": 32.49,
+  "n_evals": 10,
+  "last_step": 58849,
+  "last_score": 48.71,
+  "max_score": 48.71,
+  "mean_last5": 36.146,
+  "trajectory": [
+    [
+      5899,
+      5.35
+    ],
+    [
+      11807,
+      7.65
+    ],
+    [
+      17691,
+      16.6
+    ],
+    [
+      23585,
+      20.8
+    ],
+    [
+      29469,
+      26.18
+    ],
+    [
+      35359,
+      29.79
+    ],
+    [
+      41263,
+      28.76
+    ],
+    [
+      47127,
+      44.22
+    ],
+    [
+      52991,
+      29.25
+    ],
+    [
+      58849,
+      48.71
+    ]
+  ],
+  "created_at": "2026-04-18T11:02:21Z",
+  "tags": [],
+  "_extra": {
+    "group": "transfer",
+    "condition": "freeze-all",
+    "seed": "seed0"
+  }
+}
