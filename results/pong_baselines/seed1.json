@@ -1,0 +1,60 @@
+{
+  "name": "hrvq/atari100k/pong/seed1",
+  "id": "zfswtji1",
+  "state": "finished",
+  "runtime_h": 39.83,
+  "n_evals": 10,
+  "last_step": 57777,
+  "last_score": 18.85,
+  "max_score": 18.87,
+  "mean_last5": 15.22,
+  "trajectory": [
+    [
+      5818,
+      -9.42
+    ],
+    [
+      11597,
+      -15.78
+    ],
+    [
+      17392,
+      -6.71
+    ],
+    [
+      23165,
+      -12.16
+    ],
+    [
+      28938,
+      -5.25
+    ],
+    [
+      34693,
+      1.94
+    ],
+    [
+      40448,
+      18.87
+    ],
+    [
+      46171,
+      17.67
+    ],
+    [
+      51984,
+      18.77
+    ],
+    [
+      57777,
+      18.85
+    ]
+  ],
+  "created_at": "2026-04-04T11:46:32Z",
+  "tags": [],
+  "_extra": {
+    "group": "pong",
+    "condition": "baseline",
+    "seed": "seed1"
+  }
+}
