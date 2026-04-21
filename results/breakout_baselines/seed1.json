@@ -1,0 +1,60 @@
+{
+  "name": "hrvq/atari100k/breakout/seed1",
+  "id": "uk9zicco",
+  "state": "finished",
+  "runtime_h": 40.14,
+  "n_evals": 10,
+  "last_step": 58931,
+  "last_score": 33.74,
+  "max_score": 33.74,
+  "mean_last5": 25.964,
+  "trajectory": [
+    [
+      5901,
+      1.37
+    ],
+    [
+      11807,
+      1.23
+    ],
+    [
+      17681,
+      5.78
+    ],
+    [
+      23595,
+      13.68
+    ],
+    [
+      29497,
+      17.19
+    ],
+    [
+      35391,
+      22.41
+    ],
+    [
+      41283,
+      14.11
+    ],
+    [
+      47147,
+      29.01
+    ],
+    [
+      53031,
+      30.55
+    ],
+    [
+      58931,
+      33.74
+    ]
+  ],
+  "created_at": "2026-04-09T17:28:21Z",
+  "tags": [],
+  "_extra": {
+    "group": "breakout",
+    "condition": "baseline",
+    "seed": "seed1"
+  }
+}

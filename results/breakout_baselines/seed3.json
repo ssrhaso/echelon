@@ -1,0 +1,60 @@
+{
+  "name": "hrvq/atari100k/breakout/seed3",
+  "id": "l520nab1",
+  "state": "finished",
+  "runtime_h": 36.03,
+  "n_evals": 10,
+  "last_step": 58871,
+  "last_score": 54.5,
+  "max_score": 61.02,
+  "mean_last5": 44.284,
+  "trajectory": [
+    [
+      5883,
+      5.1
+    ],
+    [
+      11791,
+      13.92
+    ],
+    [
+      17693,
+      12.96
+    ],
+    [
+      23585,
+      20.7
+    ],
+    [
+      29487,
+      23.73
+    ],
+    [
+      35365,
+      35.48
+    ],
+    [
+      41243,
+      36.23
+    ],
+    [
+      47129,
+      61.02
+    ],
+    [
+      52999,
+      34.19
+    ],
+    [
+      58871,
+      54.5
+    ]
+  ],
+  "created_at": "2026-04-09T17:54:33Z",
+  "tags": [],
+  "_extra": {
+    "group": "breakout",
+    "condition": "baseline",
+    "seed": "seed3"
+  }
+}
