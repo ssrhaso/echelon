@@ -1,0 +1,60 @@
+{
+  "name": "hrvq/atari100k/pong/seed3",
+  "id": "abxq8ux7",
+  "state": "finished",
+  "runtime_h": 30.46,
+  "n_evals": 10,
+  "last_step": 58237,
+  "last_score": 21.0,
+  "max_score": 21.0,
+  "mean_last5": 18.114,
+  "trajectory": [
+    [
+      5874,
+      -14.35
+    ],
+    [
+      11711,
+      -8.04
+    ],
+    [
+      17526,
+      -0.2
+    ],
+    [
+      23345,
+      17.2
+    ],
+    [
+      29216,
+      19.19
+    ],
+    [
+      35075,
+      19.89
+    ],
+    [
+      40828,
+      20.47
+    ],
+    [
+      46653,
+      8.21
+    ],
+    [
+      52462,
+      21.0
+    ],
+    [
+      58237,
+      21.0
+    ]
+  ],
+  "created_at": "2026-04-04T11:06:30Z",
+  "tags": [],
+  "_extra": {
+    "group": "pong",
+    "condition": "baseline",
+    "seed": "seed3"
+  }
+}
