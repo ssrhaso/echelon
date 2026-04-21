@@ -1,0 +1,60 @@
+{
+  "name": "transfer/pongto/breakout/warmstart/seed1",
+  "id": "ajb4ydp1",
+  "state": "finished",
+  "runtime_h": 24.87,
+  "n_evals": 10,
+  "last_step": 58931,
+  "last_score": 31.24,
+  "max_score": 31.24,
+  "mean_last5": 26.33,
+  "trajectory": [
+    [
+      5903,
+      5.36
+    ],
+    [
+      11805,
+      8.29
+    ],
+    [
+      17705,
+      12.72
+    ],
+    [
+      23599,
+      15.42
+    ],
+    [
+      29493,
+      19.36
+    ],
+    [
+      35375,
+      19.86
+    ],
+    [
+      41285,
+      22.71
+    ],
+    [
+      47169,
+      26.86
+    ],
+    [
+      53067,
+      30.98
+    ],
+    [
+      58931,
+      31.24
+    ]
+  ],
+  "created_at": "2026-04-15T14:14:40Z",
+  "tags": [],
+  "_extra": {
+    "group": "transfer",
+    "condition": "warmstart",
+    "seed": "seed1"
+  }
+}

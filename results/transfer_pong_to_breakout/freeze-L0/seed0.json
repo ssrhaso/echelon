@@ -1,0 +1,60 @@
+{
+  "name": "transfer/pongto/breakout/freeze-L0/seed0",
+  "id": "zra36y2b",
+  "state": "finished",
+  "runtime_h": 32.72,
+  "n_evals": 10,
+  "last_step": 58911,
+  "last_score": 35.66,
+  "max_score": 35.66,
+  "mean_last5": 27.312,
+  "trajectory": [
+    [
+      5901,
+      3.96
+    ],
+    [
+      11807,
+      8.27
+    ],
+    [
+      17715,
+      15.01
+    ],
+    [
+      23599,
+      19.8
+    ],
+    [
+      29475,
+      20.9
+    ],
+    [
+      35379,
+      18.79
+    ],
+    [
+      41255,
+      30.14
+    ],
+    [
+      47143,
+      24.8
+    ],
+    [
+      53019,
+      27.17
+    ],
+    [
+      58911,
+      35.66
+    ]
+  ],
+  "created_at": "2026-04-16T12:36:55Z",
+  "tags": [],
+  "_extra": {
+    "group": "transfer",
+    "condition": "freeze-L0",
+    "seed": "seed0"
+  }
+}

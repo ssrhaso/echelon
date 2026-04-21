@@ -1,0 +1,60 @@
+{
+  "name": "transfer/pongto/breakout/warmstart/seed0",
+  "id": "brazn5sf",
+  "state": "finished",
+  "runtime_h": 29.55,
+  "n_evals": 10,
+  "last_step": 58863,
+  "last_score": 39.2,
+  "max_score": 39.2,
+  "mean_last5": 33.186,
+  "trajectory": [
+    [
+      5895,
+      5.94
+    ],
+    [
+      11797,
+      12.35
+    ],
+    [
+      17675,
+      11.12
+    ],
+    [
+      23581,
+      18.99
+    ],
+    [
+      29479,
+      23.81
+    ],
+    [
+      35377,
+      29.25
+    ],
+    [
+      41225,
+      29.7
+    ],
+    [
+      47085,
+      31.1
+    ],
+    [
+      52955,
+      36.68
+    ],
+    [
+      58863,
+      39.2
+    ]
+  ],
+  "created_at": "2026-04-15T14:06:57Z",
+  "tags": [],
+  "_extra": {
+    "group": "transfer",
+    "condition": "warmstart",
+    "seed": "seed0"
+  }
+}

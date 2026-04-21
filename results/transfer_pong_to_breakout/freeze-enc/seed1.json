@@ -1,0 +1,60 @@
+{
+  "name": "transfer/pongto/breakout/freeze-enc/seed1",
+  "id": "jm0r9rhf",
+  "state": "finished",
+  "runtime_h": 33.73,
+  "n_evals": 10,
+  "last_step": 58971,
+  "last_score": 23.7,
+  "max_score": 23.7,
+  "mean_last5": 21.6,
+  "trajectory": [
+    [
+      5891,
+      3.28
+    ],
+    [
+      11797,
+      6.25
+    ],
+    [
+      17693,
+      9.94
+    ],
+    [
+      23575,
+      11.6
+    ],
+    [
+      29469,
+      13.97
+    ],
+    [
+      35371,
+      23.4
+    ],
+    [
+      41265,
+      19.68
+    ],
+    [
+      47163,
+      20.32
+    ],
+    [
+      53071,
+      20.9
+    ],
+    [
+      58971,
+      23.7
+    ]
+  ],
+  "created_at": "2026-04-18T10:53:52Z",
+  "tags": [],
+  "_extra": {
+    "group": "transfer",
+    "condition": "freeze-enc",
+    "seed": "seed1"
+  }
+}

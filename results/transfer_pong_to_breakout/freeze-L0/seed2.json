@@ -1,0 +1,60 @@
+{
+  "name": "transfer/pongto/breakout/freeze-L0/seed2",
+  "id": "mfgwpp8s",
+  "state": "finished",
+  "runtime_h": 25.46,
+  "n_evals": 10,
+  "last_step": 58815,
+  "last_score": 41.3,
+  "max_score": 48.95,
+  "mean_last5": 42.242,
+  "trajectory": [
+    [
+      5899,
+      4.53
+    ],
+    [
+      11797,
+      8.34
+    ],
+    [
+      17685,
+      17.94
+    ],
+    [
+      23585,
+      25.13
+    ],
+    [
+      29471,
+      30.86
+    ],
+    [
+      35377,
+      41.54
+    ],
+    [
+      41229,
+      33.2
+    ],
+    [
+      47097,
+      48.95
+    ],
+    [
+      52945,
+      46.22
+    ],
+    [
+      58815,
+      41.3
+    ]
+  ],
+  "created_at": "2026-04-15T15:00:07Z",
+  "tags": [],
+  "_extra": {
+    "group": "transfer",
+    "condition": "freeze-L0",
+    "seed": "seed2"
+  }
+}

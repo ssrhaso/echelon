@@ -1,0 +1,7 @@
+condition,n_seeds,last_score_mean,last_score_std,max_score_mean,max_score_std,mean_last5_mean,mean_last5_std
+freeze-L0,3,76.97,54.482,79.52,52.909,44.644,15.227
+freeze-L01,3,37.427,12.894,45.747,2.77,34.849,3.95
+freeze-L012,3,34.273,16.196,44.667,27.498,29.747,11.859
+freeze-all,3,32.257,11.66,33.21,10.994,24.473,8.27
+freeze-enc,3,46.173,21.463,73.643,36.901,38.992,13.429
+warmstart,3,33.037,4.483,33.037,4.483,25.907,6.124

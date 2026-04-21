@@ -1,0 +1,60 @@
+{
+  "name": "transfer/pongto/breakout/freeze-L012/seed2",
+  "id": "qwq1oqmn",
+  "state": "finished",
+  "runtime_h": 42.1,
+  "n_evals": 10,
+  "last_step": 58963,
+  "last_score": 25.98,
+  "max_score": 28.95,
+  "mean_last5": 23.898,
+  "trajectory": [
+    [
+      5903,
+      2.57
+    ],
+    [
+      11811,
+      4.6
+    ],
+    [
+      17695,
+      5.97
+    ],
+    [
+      23589,
+      13.0
+    ],
+    [
+      29479,
+      20.24
+    ],
+    [
+      35369,
+      21.76
+    ],
+    [
+      41275,
+      20.03
+    ],
+    [
+      47181,
+      22.77
+    ],
+    [
+      53075,
+      28.95
+    ],
+    [
+      58963,
+      25.98
+    ]
+  ],
+  "created_at": "2026-04-18T10:53:23Z",
+  "tags": [],
+  "_extra": {
+    "group": "transfer",
+    "condition": "freeze-L012",
+    "seed": "seed2"
+  }
+}
