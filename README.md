@@ -92,13 +92,8 @@ env_name=atari100k-alien run_name=atari100k python3 main.py --load_last --mode e
 
 If this code or paper is helpful in your research, please use the following citation:
 
-```
-@inproceedings{burchilearning,
-  title={Learning Transformer-based World Models with Contrastive Predictive Coding},
-  author={Burchi, Maxime and Timofte, Radu},
-  booktitle={The Thirteenth International Conference on Learning Representations}
-}
-```
+wip
+
 
 ## Acknowledgments
 
