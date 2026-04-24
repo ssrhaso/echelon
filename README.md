@@ -1,15 +1,10 @@
-# Learning Transformer-based World Models with Contrastive Predictive Coding (TWISTER)
+# Learning Transformer-based World Models with Contrastive Predictive Coding (ECHELON)
 
-This is the official repository of TWISTER (Transformer-based World model wIth contraSTivE Representations).
-
-**Read TWISTER paper on [OpenReview](https://openreview.net/forum?id=YK9G4Htdew) |
-[Arxiv](https://arxiv.org/abs/2503.04416)**
-
-<img src='media/twister.gif' width="100%"/>
+This is the official repository of ECHELON.
 
 ## Method
 
-We introduce TWISTER, a Transformer model-based reinforcement learning algorithm using action-conditioned Contrastive Predictive Coding (AC-CPC) to learn high-level feature representations and improve the agent performance. We evaluate our method on the commonly used Atari 100k benchmark and DeepMind Control Suite, demonstrating stronger performance in both discrete and continuous action spaces.
+We introduce ECHELON, a Transformer model-based reinforcement learning algorithm using action-conditioned Contrastive Predictive Coding (AC-CPC) to learn high-level feature representations and improve the agent performance. We evaluate our method on the commonly used Atari 100k benchmark and DeepMind Control Suite, demonstrating stronger performance in both discrete and continuous action spaces.
 
 <img src='media/method.png' width="100%"/>
 
@@ -18,6 +13,7 @@ The world model learns feature representations by maximizing the mutual informat
 ## Installation
 
 Clone GitHub repository and set up environment
+
 ```
 git clone https://github.com/burchim/TWISTER && cd TWISTER
 ./install.sh
@@ -27,7 +23,7 @@ git clone https://github.com/burchim/TWISTER && cd TWISTER
 
 ### Atari100k Benchmark
 
-The agent can be trained on specific tasks using the 'env_name' variable, which defines the training environment. Training logs, replay buffer and checkpoints will be saved to callbacks/run_name/env_name. 
+The agent can be trained on specific tasks using the 'env_name' variable, which defines the training environment. Training logs, replay buffer and checkpoints will be saved to callbacks/run_name/env_name.
 
 ```
 env_name=atari100k-alien run_name=atari100k python3 main.py
