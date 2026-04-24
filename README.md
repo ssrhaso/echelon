@@ -10,7 +10,7 @@ The world model learns feature representations by maximizing the mutual informat
 
 ## Installation
 
-Clone GitHub repository and set up environment
+Clone GitHub repository and set up environment:
 
 ```
 git clone https://github.com/burchim/TWISTER && cd TWISTER
