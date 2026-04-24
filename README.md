@@ -97,4 +97,8 @@ wip
 
 ## Acknowledgments
 
-Official DreamerV3 Implementation: [https://github.com/danijar/dreamerv3](https://github.com/danijar/dreamerv3)
+Dreamer V3
+
+IRIS
+
+TWISTER
