@@ -92,8 +92,7 @@ env_name=atari100k-alien run_name=atari100k python3 main.py --load_last --mode e
 
 If this code or paper is helpful in your research, please use the following citation:
 
-wip
-
+Work in Progress
 
 ## Acknowledgments
 
