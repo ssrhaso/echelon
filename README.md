@@ -27,14 +27,6 @@ The agent can be trained on specific tasks using the 'env_name' variable, which 
 env_name=atari100k-alien run_name=atari100k python3 main.py
 ```
 
-### DeepMind Control Suite
-
-We also provide the implementation for training on DeepMind Control tasks.env_name=dmc-Acrobot-swingup run_name=dmc python3 main.py
-
-```
-tensorboard --logdir ./callbacks
-```
-
 ### Override hyperparameters
 
 Overriding model config hyperparameters:
