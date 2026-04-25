@@ -17,8 +17,6 @@ git clone https://github.com/burchim/TWISTER && cd TWISTER
 ./install.sh
 ```
 
-## Training
-
 ### Atari100k Benchmark
 
 The agent can be trained on specific tasks using the 'env_name' variable, which defines the training environment. Training logs, replay buffer and checkpoints will be saved to callbacks/run_name/env_name.
@@ -38,10 +36,6 @@ env_name=atari100k-alien run_name=atari100k override_config='{"num_envs": 4, "ep
 ## Evaluation
 
 '--mode evaluation' can be used to evaluate agents. The '--load_last' flag will scan the log directory to load the last checkpoint. '--checkpoint' can also be used to load a specific '.ckpt' checkpoint file.
-
-```
-env_name=atari100k-alien run_name=atari100k python3 main.py --load_last --mode evaluation
-```
 
 ## Script options
 
