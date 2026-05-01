@@ -1,4 +1,4 @@
-# Learning Transformer-based World Models with Contrastive Predictive Coding (ECHELON)
+# ECHELON: Spatial Hierarchical Residual VQ for Transformer World Models
 
 This is the official repository of ECHELON.
 
