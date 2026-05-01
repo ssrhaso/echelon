@@ -12,7 +12,7 @@ The encoder, transformer state-space model, and decoder are adapted to consume p
 Clone GitHub repository and set up environment:
 
 ```
-git clone https://github.com/burchim/TWISTER && cd TWISTER
+git clone https://github.com/ssrhaso/echelon.git && cd echelon
 ./install.sh
 ```
 
