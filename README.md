@@ -13,7 +13,7 @@ Clone GitHub repository and set up environment:
 
 ```
 git clone https://github.com/ssrhaso/echelon.git && cd echelon
-./install.sh
+pip install -r requirements.txt
 ```
 
 ### Atari100k Benchmark
