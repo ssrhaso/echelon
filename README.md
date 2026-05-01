@@ -16,7 +16,7 @@ git clone https://github.com/ssrhaso/echelon.git && cd echelon
 pip install -r requirements.txt
 ```
 
-### Atari100k Benchmark
+### Training
 
 The agent can be trained on specific tasks using the 'env_name' variable, which defines the training environment. Training logs, replay buffer and checkpoints will be saved to callbacks/run_name/env_name.
 
