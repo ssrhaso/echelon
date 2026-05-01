@@ -7,6 +7,7 @@ Research code for ECHELON, a fork of TWISTER that replaces the flat stochastic-s
 ECHELON inherits the transformer-based world model and action-conditioned Contrastive Predictive Coding (AC-CPC) objective from TWISTER. It replaces TWISTER's flat categorical stochastic state with a 3-level spatial Hierarchical Residual VQ tokenizer applied at each spatial position from the encoder CNN. Each VQ level quantizes the residual from the previous level, with EMA codebook updates and dead-code revival.
 
 The encoder, transformer state-space model, and decoder are adapted to consume per-position cascade-summed embeddings from the HRVQ levels. Codebook transfer utilities under nnet/modules/twister/hrvq/transfer.py allow pre-trained codebooks from one game to be loaded and frozen in another for cross-game transfer ablations.
+
 ## Installation
 
 Clone GitHub repository and set up environment:
