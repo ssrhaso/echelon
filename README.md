@@ -1,6 +1,6 @@
 # ECHELON: Spatial Hierarchical Residual VQ for Transformer World Models
 
-This is the official repository of ECHELON.
+Research code for ECHELON, a fork of TWISTER that replaces the flat stochastic-state tokens with a spatial Hierarchical Residual VQ (HRVQ) tokenizer.
 
 ## Method
 
