@@ -71,7 +71,7 @@ env_name=atari100k-alien run_name=atari100k override_config='{"num_envs": 4, "ep
 
 If this code or paper is helpful in your research, please use the following citation:
 
-Work in Progress!
+Research code for an ongoing project. No published citation yet. If you build on this code please also cite TWISTER, the architecture this repo extends.
 
 ## Acknowledgments
 
