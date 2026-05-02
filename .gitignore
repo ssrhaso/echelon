@@ -6,9 +6,7 @@ callbacks/*
 .ipynb_checkpoints
 .cache
 wandb/*
-env_twister/*
 
 venv/
 
-boilerplate/
 system_test.py
