@@ -76,8 +76,4 @@ Research code for an ongoing project. No published citation yet. If you build on
 
 ## Acknowledgments
 
-Dreamer V3
-
-IRIS
-
-TWISTER
+Built on TWISTER. World-model design follows DreamerV3, and tokenizer design draws on IRIS and VQ-VAE.
