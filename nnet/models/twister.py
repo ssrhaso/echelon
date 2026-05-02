@@ -34,7 +34,7 @@ import os
 
 class TWISTER(models.Model):
 
-    def __init__(self, env_name, override_config={}, name="Transformer-based World model wIth contraSTivE Representations (TWISTER)"):
+    def __init__(self, env_name, override_config={}, name="ECHELON: Spatial HRVQ World Model"):
         super(TWISTER, self).__init__(name=name)
 
         # Model Sizes
