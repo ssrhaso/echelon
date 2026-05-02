@@ -14,9 +14,8 @@
 
 """Spatial HRVQ Encoder: CNN -> spatial tokens -> shared 3-level HRVQ -> aggregate.
 
-Replaces fvq/encoder.py. Same CNN, but stops before flattening to produce
-16 spatial tokens of 256-dim each, applies shared HRVQ, then aggregates
-to (32, 32) stoch for TSSM compatibility.
+The CNN stops before flattening to produce 16 spatial tokens of 256-dim each,
+applies shared HRVQ, then aggregates to (32, 32) stoch for TSSM compatibility.
 """
 
 import torch.nn as nn
