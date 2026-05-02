@@ -14,15 +14,11 @@
 
 """Spatial HRVQ TSSM: transformer-based sequence model with spatial dynamics.
 
-The TSSM transformer processes one aggregated token per timestep (unchanged).
-Spatial structure exists only in the dynamics head: deter(512) is projected to
-16 spatial positions, each predicting 3-level codebook logits via a shared MLP.
-Codebook lookup + residual sum produces stoch(16, 256) — a parameter-free reshape
-(identity) from z_q_positions, preserving full spatial information.
-
-Changes from fvq/tssm.py:
-- dynamics_predictor replaced by spatial_proj + position_embeddings + spatial_dynamics_mlp
-- State dict keys: logits_l0, logits_l1, logits_l2 instead of logits
+The TSSM transformer processes one aggregated token per timestep. Spatial
+structure exists only in the dynamics head: deter(512) is projected to 16
+spatial positions, each predicting 3-level codebook logits via a shared MLP.
+Codebook lookup plus residual sum produces stoch(16, 256), a parameter-free
+reshape from z_q_positions that preserves full spatial information.
 """
 
 import torch
