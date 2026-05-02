@@ -14,7 +14,7 @@
 
 """Spatial HRVQ: VectorQuantizerEMA + multi-level residual HRVQ.
 
-VectorQuantizerEMA: copied from fvq/vq.py with default embed_dim=256.
+VectorQuantizerEMA: single-level EMA codebook with dead-code revival.
 HRVQ: supports num_codes=[512,512,512] for 3-level residual quantization.
 """
 
