@@ -41,7 +41,7 @@ env_name=atari100k-alien run_name=atari100k override_config='{"num_envs": 4, "ep
 
 ```
 # Args
--c / --config_file           type=str   default="configs/twister.py"    help="Python configuration file containing model hyperparameters"
+-c / --config_file           type=str   default="configs/echelon.py"    help="Python configuration file containing model hyperparameters"
 -m / --mode                  type=str   default="training"              help="Mode: training, evaluation, pass"
 -i / --checkpoint            type=str   default=None                    help="Load model from checkpoint name"
 --cpu                        action="store_true"                        help="Load model on cpu"
