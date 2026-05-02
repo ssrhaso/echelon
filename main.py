@@ -162,7 +162,7 @@ if __name__ == "__main__":
 
     # Args
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config_file",          type=str,   default="configs/twister.py",                                       help="Python configuration file containing model hyperparameters")
+    parser.add_argument("-c", "--config_file",          type=str,   default="configs/echelon.py",                                       help="Python configuration file containing model hyperparameters")
     parser.add_argument("-m", "--mode",                 type=str,   default="training", choices=["training", "evaluation", "pass"],     help="Mode: training, validation-clean, test-clean, eval_time-dev-clean, ...")
     parser.add_argument("-i", "--checkpoint",           type=str,   default=None,                                                       help="Load model from checkpoint name")
     parser.add_argument("--cpu",                        action="store_true",                                                            help="Load model on cpu")
