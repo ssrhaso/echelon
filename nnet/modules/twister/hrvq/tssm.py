@@ -252,7 +252,7 @@ class SpatialHRVQTSSM(nn.Module):
         return initial_state
 
     def observe(self, states, prev_actions, is_firsts, prev_state=None, is_firsts_hidden=None, return_blocks_deter=False):
-        """Unchanged from TWISTER. Runs forward model on observation sequence."""
+        """Run forward model on observation sequence."""
 
         # Create prev_states (B, L-1, ...)
         prev_states = {key: value[:, :-1] for key, value in states.items()}
@@ -351,12 +351,12 @@ class SpatialHRVQTSSM(nn.Module):
         return torch.cat([state["stoch"].flatten(start_dim=-2, end_dim=-1), state["deter"] if blocks_deter_id is None else state["blocks_deter"][blocks_deter_id]], dim=-1)
 
     def slice_hidden(self, hidden):
-        """Unchanged from TWISTER."""
+        """Truncate transformer hidden state to the attention left-context window."""
         hidden = [(hidden_blk[0][:, -self.att_context_left:], hidden_blk[1][:, -self.att_context_left:]) for hidden_blk in hidden]
         return hidden
 
     def get_hidden_len(self, hidden):
-        """Unchanged from TWISTER."""
+        """Return current cached hidden length, or 0 if no hidden state."""
         if hidden is not None:
             return hidden[0][0].shape[1]
         else:
