@@ -14,7 +14,6 @@
 
 """WorldModel.forward body for spatial HRVQ losses.
 
-Replaces the forward method body in twister.py's WorldModel inner class.
 Implements cascade reconstruction, per-level CE, VQ commitment, and
 contrastive with pre-VQ features.
 """
