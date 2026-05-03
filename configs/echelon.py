@@ -4,7 +4,7 @@ import json
 
 # Extract params from filename
 env_name = os.environ["env_name"]
-print("TWISTER selected env_name: {}".format(env_name))
+print("ECHELON selected env_name: {}".format(env_name))
 
 # Override Config
 override_config = os.environ.get("override_config", {})
