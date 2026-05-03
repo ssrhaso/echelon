@@ -68,7 +68,7 @@ class DecoderNetwork(nn.Module):
         )
 
     def forward_cnn(self, x):
-        """UNCHANGED from TWISTER. Decodes flat embedding to image distribution.
+        """Decode flat embedding to image distribution.
 
         Args:
             x: (*, D) where D = feat_size (1024 for cascade, 1536 for full feat)
@@ -94,7 +94,7 @@ class DecoderNetwork(nn.Module):
         return obs_dist
 
     def forward(self, inputs):
-        """UNCHANGED from TWISTER.
+        """Decode flat feature vector to image distribution.
 
         Args:
             inputs: (*, D) flat feature vector
