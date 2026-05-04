@@ -77,3 +77,9 @@ Research code for an ongoing project. No published citation yet. If you build on
 ## Acknowledgments
 
 Built on TWISTER. World-model design follows DreamerV3, and tokenizer design draws on IRIS and VQ-VAE.
+
+## License
+
+ECHELON is released under the Apache License, Version 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE) for full terms and attribution.
+
+ECHELON derives from [TWISTER](https://github.com/burchim/TWISTER) (Burchi, ICLR 2025), also Apache 2.0. Per Apache 2.0 § 4, original copyright notices are retained on TWISTER-derived files; ECHELON modifications carry an additional notice.
