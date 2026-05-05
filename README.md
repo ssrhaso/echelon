@@ -13,7 +13,7 @@ The encoder, transformer state-space model, and decoder are adapted to consume p
 Clone GitHub repository and set up environment:
 
 ```
-git clone https://github.com/ssrhaso/echelon.git && cd echelon
+git clone https://github.com/ssrhaso/ECHELON.git && cd ECHELON
 pip install -r requirements.txt
 ```
 
@@ -70,9 +70,19 @@ env_name=atari100k-alien run_name=atari100k override_config='{"num_envs": 4, "ep
 
 ## Citation
 
-If this code or paper is helpful in your research, please use the following citation:
+ECHELON is research code for an ongoing project; there is no associated paper yet. To cite this repository directly, see [CITATION.cff](CITATION.cff) (GitHub also exposes this via the "Cite this repository" sidebar).
 
-Research code for an ongoing project. No published citation yet. If you build on this code please also cite TWISTER, the architecture this repo extends.
+If you build on ECHELON, please also cite TWISTER, the architecture this repo extends:
+
+```bibtex
+@inproceedings{burchi2025twister,
+  title     = {Learning Transformer-based World Models with Contrastive Predictive Coding},
+  author    = {Burchi, Maxime and Timofte, Radu},
+  booktitle = {The Thirteenth International Conference on Learning Representations (ICLR)},
+  year      = {2025},
+  url       = {https://openreview.net/forum?id=YK9G4Htdew}
+}
+```
 
 ## Acknowledgments
 
