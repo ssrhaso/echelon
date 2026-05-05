@@ -3,10 +3,13 @@ __pycache__
 .vscode
 .DS_Store
 callbacks/*
+results/
 .ipynb_checkpoints
 .cache
 wandb/*
+*.ckpt
 
 venv/
 
-system_test.py
+# Local-only smoke test runner under nnet/modules/twister/fvq/
+**/system_test.py
