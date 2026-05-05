@@ -10,7 +10,7 @@ The encoder, transformer state-space model, and decoder are adapted to consume p
 
 ## Installation
 
-Clone GitHub repository and set up environment:
+Requires Python ≥ 3.12. Clone GitHub repository and set up environment:
 
 ```
 git clone https://github.com/ssrhaso/ECHELON.git && cd ECHELON
