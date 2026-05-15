@@ -148,6 +148,7 @@ class SpatialHRVQEncoder(nn.Module):
                 "indices": indices_spatial,
                 "vq_loss": hrvq_out["vq_loss"],
                 "perplexities": hrvq_out["perplexities"],
+                "residual_errors": hrvq_out["residual_errors"],
             },
             "pre_vq_features": pre_vq_flat,  # (*, 4096)
         }
