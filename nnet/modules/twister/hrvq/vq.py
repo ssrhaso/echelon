@@ -203,11 +203,15 @@ class HRVQ(nn.Module):
             "indices": [idx0, idx1, idx2] each (*,) LongTensor
             "vq_loss": scalar total commitment loss
             "perplexities": [perp0, perp1, perp2] per-level scalars
+            "residual_errors": [e0, e1, e2] per-level relative residual
+                quant error ‖rₗ−z_qₗ‖²/‖rₗ‖² (no-grad scalars, log-only;
+                "is each level explaining residual variance?")
         """
         z_q_levels = []
         indices_all = []
         total_vq_loss = torch.tensor(0.0, device=z_e.device, dtype=z_e.dtype)
         perplexities = []
+        residual_errors = []
 
         residual = z_e
         for level in range(self.num_levels):
@@ -220,6 +224,15 @@ class HRVQ(nn.Module):
             indices_all.append(indices_level)
             total_vq_loss = total_vq_loss + loss_level
             perplexities.append(perp_level)
+
+            # Per-level relative residual quant error (log-only diagnostic).
+            # Computed under no_grad on detached tensors — provably zero
+            # effect on the training graph. `residual` here is exactly the
+            # input to this level (before the subtraction below).
+            with torch.no_grad():
+                num = (residual.detach() - z_q_raw.detach()).pow(2).sum(dim=-1)
+                den = residual.detach().pow(2).sum(dim=-1).clamp_min(1e-8)
+                residual_errors.append((num / den).mean())
 
             # Compute residual for next level using raw z_q (detached from codebook)
             if level < self.num_levels - 1:
@@ -235,6 +248,7 @@ class HRVQ(nn.Module):
             "indices": indices_all,
             "vq_loss": total_vq_loss,
             "perplexities": perplexities,
+            "residual_errors": residual_errors,
         }
 
     @torch.no_grad()
