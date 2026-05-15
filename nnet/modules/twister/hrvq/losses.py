@@ -25,6 +25,53 @@ import torch.nn.functional as F
 from .decoder import spatial_cascade_decode
 
 
+def _log_encoder_drift_from_init(wm, states):
+    """Log MSE of the CNN encoder's features vs. its own epoch-0 state.
+
+    Mechanism probe: under codebook freezing, how far does the encoder
+    representation move from where *this run* started? The reference is the
+    run's own step-0 encoder (NOT the source encoder) — well-defined and
+    comparable across all freeze conditions:
+      - freeze-enc / freeze-all: encoder never moves -> drift ≡ 0 (informative
+        by contrast, not vacuous).
+      - warmstart / freeze-L*: random-init encoder trains -> drift grows,
+        comparable across runs on the same fixed batch.
+
+    Implementation notes (zero training footprint):
+      - State lives in a plain dict on wm.outer.__dict__ -> never enters
+        state_dict, the optimizer, or EMA.
+      - The CNN (Conv/LayerNorm/SiLU, no dropout/BatchNorm) is deterministic
+        given weights, so we cache reference *features* once at step 0 — no
+        encoder copy retained.
+      - Everything runs under no_grad on a small detached fixed batch.
+    """
+    state = wm.outer.__dict__.setdefault("_echelon_instr", {})
+    # Robust default lookup: wm.config is an AttrDict (dict subclass) whose
+    # __getattr__ is dict.__getitem__, so a missing key raises KeyError —
+    # which getattr(..., default) does NOT catch. Use dict .get for dicts.
+    cfg = wm.config
+    period = int(cfg.get("echelon_instr_period", 250)) if isinstance(cfg, dict) \
+        else int(getattr(cfg, "echelon_instr_period", 250))
+
+    with torch.no_grad():
+        if "ref_feats" not in state:
+            # Snapshot a small, fixed eval batch + epoch-0 reference features.
+            n = min(2, states.shape[0])
+            fixed = states[:n].detach().clone()
+            state["fixed_batch"] = fixed
+            state["ref_feats"] = wm.encoder_network.forward_cnn(fixed).float()
+            state["calls"] = 0
+            return  # step-0 drift is 0 by construction; skip the log
+
+        state["calls"] += 1
+        if state["calls"] % period != 0:
+            return
+
+        cur = wm.encoder_network.forward_cnn(state["fixed_batch"]).float()
+        drift = F.mse_loss(cur, state["ref_feats"]).item()
+        wm.add_info("encoder_drift_from_init", drift)
+
+
 def compute_world_model_losses(wm, inputs):
     """WorldModel forward pass for spatial HRVQ.
 
@@ -51,6 +98,10 @@ def compute_world_model_losses(wm, inputs):
 
     # Encode observations: CNN -> spatial HRVQ -> stoch
     encoder_out = wm.encoder_network(states)
+
+    # Mechanism probe: encoder drift from this run's own step-0 state
+    # (log-only, throttled, no grad — see helper docstring).
+    _log_encoder_drift_from_init(wm, states)
 
     # Split: TSSM only sees "stoch", hrvq_info and pre_vq_features stay local
     tssm_states = {"stoch": encoder_out["stoch"]}             # (B, L, 16, 256)
@@ -233,5 +284,16 @@ def compute_world_model_losses(wm, inputs):
     wm.add_info("vq_loss", vq_loss.item())
     for level in range(num_levels):
         wm.add_info(f"vq_perplexity_l{level}", hrvq_info["perplexities"][level].item())
+
+    # Mechanism probes (log-only scalars, ~0 storage):
+    # (1) Per-level codebook usage fraction (unique codes / codebook size).
+    #     Complements the perplexity above; for trainable codebooks under a
+    #     trainable encoder this tracks how the active set drifts vs. source.
+    # (2) Per-level relative residual quant error ‖rₗ−z_qₗ‖²/‖rₗ‖²:
+    #     "is each level of the [1.0,0.5,0.1]-weighted hierarchy doing work?"
+    usage_stats = wm.encoder_network.hrvq.get_codebook_usage(hrvq_info["indices"])
+    for level in range(num_levels):
+        wm.add_info(f"vq_usage_l{level}", usage_stats[f"usage_{level}"])
+        wm.add_info(f"vq_residual_err_l{level}", hrvq_info["residual_errors"][level].item())
 
     return outputs
