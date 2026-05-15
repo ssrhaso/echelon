@@ -490,6 +490,14 @@ def test_12_world_model_forward():
     assert "vq_loss" in wm.infos, "Missing info: vq_loss"
     for lvl in range(3):
         assert f"vq_perplexity_l{lvl}" in wm.infos, f"Missing info: vq_perplexity_l{lvl}"
+        assert f"vq_usage_l{lvl}" in wm.infos, f"Missing info: vq_usage_l{lvl}"
+        assert f"vq_residual_err_l{lvl}" in wm.infos, f"Missing info: vq_residual_err_l{lvl}"
+        assert 0.0 <= wm.infos[f"vq_usage_l{lvl}"] <= 1.0, f"usage_l{lvl} out of [0,1]"
+    # Drift instrumentation: first call caches step-0 ref, logs nothing yet,
+    # and is stored OUTSIDE any nn.Module registry (plain dict on outer).
+    assert "_echelon_instr" in outer.__dict__, "drift state not created on outer"
+    assert "ref_feats" in outer.__dict__["_echelon_instr"], "ref_feats not cached"
+    assert "encoder_drift_from_init" not in wm.infos, "drift must not log on step 0"
     print(f"  Infos: {list(wm.infos.keys())}")
 
     assert "acc_con" in wm.added_metrics, "Missing metric: acc_con"
@@ -546,6 +554,99 @@ def test_13_predict_spatial_no_stoch_grad():
     print(f"  PASS")
 
 
+def test_14_hrvq_residual_errors():
+    """HRVQ per-level residual error: scalar, finite, >=0, fully detached."""
+    print("TEST 14: HRVQ per-level residual quant error (log-only)")
+    hrvq = HRVQ(embed_dim=256, num_codes=[512, 512, 512], commitment_costs=[0.25, 0.5, 1.0])
+    hrvq.train()
+    z_e = torch.randn(8, 16, 256, requires_grad=True)
+    out = hrvq(z_e.reshape(-1, 256))
+
+    assert "residual_errors" in out, "missing residual_errors"
+    assert len(out["residual_errors"]) == 3
+    for i, e in enumerate(out["residual_errors"]):
+        assert e.dim() == 0, f"residual_errors[{i}] not scalar: {e.shape}"
+        assert torch.isfinite(e), f"residual_errors[{i}] not finite"
+        assert e.item() >= 0.0, f"residual_errors[{i}] negative"
+        # MUST be off the autograd graph — zero training footprint.
+        assert not e.requires_grad and e.grad_fn is None, \
+            f"residual_errors[{i}] is attached to the graph"
+
+    # The real straight-through path must still backprop unchanged.
+    out["z_q"].sum().backward()
+    assert z_e.grad is not None and z_e.grad.abs().sum() > 0, "ST grad broken"
+    print(f"  PASS  residual_errors=[{', '.join(f'{e:.3f}' for e in out['residual_errors'])}]")
+
+
+def test_15_encoder_residual_errors():
+    """Encoder passes residual_errors through hrvq_info with correct form."""
+    print("TEST 15: Encoder hrvq_info residual_errors passthrough")
+    encoder = SpatialHRVQEncoder()
+    encoder.train()
+    out = encoder(torch.randn(2, 4, 3, 64, 64))
+    re = out["hrvq_info"]["residual_errors"]
+    assert len(re) == 3, f"expected 3 levels, got {len(re)}"
+    for i, e in enumerate(re):
+        assert e.dim() == 0 and torch.isfinite(e) and not e.requires_grad, \
+            f"residual_errors[{i}] malformed"
+    print(f"  PASS  residual_errors=[{', '.join(f'{e:.3f}' for e in re)}]")
+
+
+def test_16_encoder_drift_from_init():
+    """Drift-from-init helper: caches step-0 ref, throttles, 0 when frozen."""
+    print("TEST 16: encoder drift-from-init helper")
+    from nnet.modules.twister.hrvq.losses import _log_encoder_drift_from_init
+
+    encoder = SpatialHRVQEncoder()
+    encoder.train()
+
+    class Outer:
+        pass
+
+    class WM:
+        def __init__(self):
+            self.encoder_network = encoder
+            self.outer = Outer()
+            self.config = AttrDict()  # no echelon_instr_period -> default (dict path)
+            self.infos = {}
+
+        def add_info(self, k, v):
+            self.infos[k] = v
+
+    wm = WM()
+    states = torch.randn(3, 4, 3, 64, 64)
+
+    # First call: snapshot step-0 ref + fixed batch, log nothing.
+    _log_encoder_drift_from_init(wm, states)
+    st = wm.outer.__dict__["_echelon_instr"]
+    assert "ref_feats" in st and "fixed_batch" in st, "ref not cached"
+    assert st["fixed_batch"].shape[0] == 2, "fixed batch not capped at min(2, B)"
+    assert not st["ref_feats"].requires_grad, "ref_feats attached to graph"
+    assert "encoder_drift_from_init" not in wm.infos, "must not log on step 0"
+
+    period = 250
+    for _ in range(period):
+        _log_encoder_drift_from_init(wm, states)
+    assert "encoder_drift_from_init" in wm.infos, "drift not logged at throttle boundary"
+    # Weights unchanged -> drift is exactly ~0 (deterministic CNN, no dropout).
+    assert wm.infos["encoder_drift_from_init"] < 1e-6, \
+        f"unchanged encoder should have ~0 drift, got {wm.infos['encoder_drift_from_init']}"
+
+    # Perturb encoder weights -> drift must become substantively positive.
+    # Use per-element random noise on ALL cnn params: a uniform additive/scale
+    # shift on an early conv is cancelled by the following LayerNorm
+    # (mean/var over channels), so a degenerate perturbation would falsely
+    # read ~0. Random noise is not LayerNorm-invariant.
+    with torch.no_grad():
+        for p in encoder.cnn.parameters():
+            p.add_(0.5 * torch.randn_like(p))
+    for _ in range(period):
+        _log_encoder_drift_from_init(wm, states)
+    assert wm.infos["encoder_drift_from_init"] > 1e-3, \
+        f"drift should grow meaningfully after weight change, got {wm.infos['encoder_drift_from_init']}"
+    print(f"  PASS  drift(frozen)~0, drift(perturbed)={wm.infos['encoder_drift_from_init']:.4f}")
+
+
 # Main
 
 if __name__ == "__main__":
@@ -562,4 +663,7 @@ if __name__ == "__main__":
     test_11_dead_code_revival()
     test_12_world_model_forward()
     test_13_predict_spatial_no_stoch_grad()
-    print("\nAll 13 tests passed.")
+    test_14_hrvq_residual_errors()
+    test_15_encoder_residual_errors()
+    test_16_encoder_drift_from_init()
+    print("\nAll 16 tests passed.")
