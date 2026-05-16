@@ -123,6 +123,15 @@ class AtariEnv:
         self.terminal_on_life_loss = terminal_on_life_loss
 
         # Env
+        if game not in GAME_TO_ALE_ID:
+            import difflib
+            suggestion = difflib.get_close_matches(game, GAME_TO_ALE_ID.keys(), n=1)
+            hint = " Did you mean '{}'?".format(suggestion[0]) if suggestion else ""
+            raise KeyError(
+                "Unknown Atari game token '{}'.{} Game tokens must be lowercase "
+                "with underscores (e.g. 'ms_pacman', not 'mspacman'/'MsPacman'). "
+                "Valid tokens: {}".format(game, hint, ", ".join(sorted(GAME_TO_ALE_ID)))
+            )
         env_id = GAME_TO_ALE_ID[game]
         self.env = gym.make(
             env_id,

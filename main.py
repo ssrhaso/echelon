@@ -201,5 +201,32 @@ if __name__ == "__main__":
     # Parse Args
     args = parser.parse_args()
 
+    # Fail-fast validation: catch bad CLI args at startup instead of crashing
+    # cryptically minutes into a multi-hour fleet run.
+    if args.transfer_checkpoint is not None and not os.path.isfile(args.transfer_checkpoint):
+        parser.error(
+            "--transfer_checkpoint path does not exist: {}".format(args.transfer_checkpoint)
+        )
+
+    if args.freeze_levels is not None:
+        try:
+            parsed_levels = [int(x) for x in args.freeze_levels.split(",") if x != ""]
+        except ValueError:
+            parser.error(
+                "--freeze_levels must be comma-separated integers, e.g. '0,1,2' "
+                "(got {!r})".format(args.freeze_levels)
+            )
+        if not parsed_levels or any(lvl < 0 or lvl > 2 for lvl in parsed_levels):
+            parser.error(
+                "--freeze_levels values must be in [0, 2] (3 HRVQ levels); "
+                "got {!r}".format(args.freeze_levels)
+            )
+
+    if args.freeze_encoder and args.transfer_checkpoint is None:
+        parser.error(
+            "--freeze_encoder requires --transfer_checkpoint (freezing a randomly "
+            "initialised encoder is never intended)"
+        )
+
     # Run main
     main(args)

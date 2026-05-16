@@ -1,12 +1,18 @@
-gymnasium>=1.0.0
-ale-py>=0.8.1
+# Pinned to the validated environment (h8-ahmad, RTX 5070, CUDA 12.8, 16 May 2026).
+# Exact pins keep Pair-1 and Pair-2 fleet PCs on identical deps so the
+# cross-pair "U-shape replicates" comparison is not confounded by silent
+# library drift between setups done weeks apart.
+gymnasium==1.2.3
+ale-py==0.11.2
+# AutoROM only fetches ROM bytes at setup time (ROM content is version-independent);
+# left as a lower bound since it is not a runtime dependency.
 AutoROM[accept-rom-license]>=0.6.1
-opencv-python>=4.9.0
-dm_control>=1.0.14
-torch>=2.1.2
-torchvision>=0.16.2
-numpy>=1.26.4
-tqdm
-wandb
-av
-tensorboard
+opencv-python==4.13.0.92
+dm_control==1.0.38
+torch==2.11.0
+torchvision==0.26.0
+numpy==2.4.3
+tqdm==4.67.3
+wandb==0.25.1
+av==17.0.0
+tensorboard==2.20.0
