@@ -1,0 +1,14 @@
+ECHELON
+Copyright 2025-2026 Hasaan Ahmad
+
+This product includes software developed for the ECHELON research project
+(spatial Hierarchical Residual VQ for transformer world models).
+
+This product is derived from TWISTER:
+    https://github.com/burchim/TWISTER
+    Copyright 2025 Maxime Burchi
+    Licensed under the Apache License, Version 2.0
+
+Per Apache License, Version 2.0, Section 4(c), original copyright notices are
+retained on TWISTER-derived source files. Files modified for ECHELON carry an
+additional modification notice as required by Section 4(b).
