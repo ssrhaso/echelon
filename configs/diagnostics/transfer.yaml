@@ -1,0 +1,37 @@
+# Mechanistic-diagnostics manifest for the Pong -> target transfer study.
+#
+# Run:   python scripts/run_diagnostics.py --manifest configs/diagnostics/transfer.yaml
+# Check: python scripts/run_diagnostics.py --manifest configs/diagnostics/transfer.yaml --dry_run
+# One:   python scripts/run_diagnostics.py --manifest configs/diagnostics/transfer.yaml --only breakout
+#
+# Each job scores every resolved checkpoint on ONE shared held-out frame batch.
+# To add a checkpoint: drop its dir into checkpoints_local/ following the
+# <game>_<condition>_seed<N>/best.ckpt convention - the globs below pick it up
+# automatically, no manifest edit required.
+
+output_root: results/diagnostics
+
+# Pong source checkpoint: reference for codebook drift (matched-index L2/cosine)
+# and, because include_source scores it on the target frames, for the per-level
+# Jaccard-vs-source diagnostic (D1).
+source: checkpoints_local/pong_scratch_seed5/best.ckpt
+include_source: true
+plot: true
+
+# Per-job frame defaults (override inside a job's own `frames:` block).
+frames:
+  policy: random      # 'agent' = in-distribution rollout; needs a trained policy
+  n_frames: 256
+  seed: 0
+
+jobs:
+ - name: breakout
+    frame_env: atari100k-breakout
+    targets:
+ - glob: "checkpoints_local/breakout_*/best.ckpt"
+
+ - name: mspacman
+    frame_env: atari100k-ms_pacman
+    targets:
+ - glob: "checkpoints_local/mspacman_*/best.ckpt"
+ - glob: "checkpoints_local/ms_pacman_*/best.ckpt"
