@@ -4,13 +4,10 @@
 #
 # Each array task runs exactly ONE row of the manifest CSV on ONE GPU, so a 2-GPU A100
 # node hosts two independent runs. Row N of the manifest (0-indexed, header excluded)
-# is array task N -- see scripts/gen_isca_manifest.py for the ordering guarantee.
+# is array task N.
 #
-# Do not submit this by hand: scripts/isca_launch.py validates the manifest first
-# (single precision, staged donor, protected source untouched) and prints/submits the
-# sbatch lines.
-#   python scripts/isca_launch.py --manifest experiments/isca_aug26_manifest.csv          # dry run
-#   python scripts/isca_launch.py --manifest experiments/isca_aug26_manifest.csv --submit
+# Validate the manifest before submitting: one precision across the sweep, the donor
+# checkpoint staged, and the protected source run left untouched.
 #
 # Watch: squeue --me ; tail -f logs/aug26_*.out
 

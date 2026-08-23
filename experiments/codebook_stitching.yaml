@@ -9,7 +9,6 @@
 # Driven by:
 #   experiments/isca_setup.sh        -> stages pong + every game's donor into transfer_ckpt/
 #   experiments/isca_stitch.slurm    -> sbatch --export=ALL,GAME=<game> ...   (one node per job)
-# Analysis: scripts/stitch_logs_to_table.py --game <game>
 
 run_name: hrvq_stitch
 

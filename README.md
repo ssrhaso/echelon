@@ -7,9 +7,9 @@ of cross-game transfer.
 
 ![ECHELON architecture: encoder CNN, 3-level HRVQ tokenizer, TSSM and decoder, with per-level codebook freezing for cross-game transfer](assets/echelon_arch.gif)
 
-This repository holds the model, the sweep definitions and the analysis
-pipeline. The manuscript, its figures and the derived result tables are not
-versioned here; the scripts below rebuild them from the run history.
+This repository holds the model, its configuration and the sweep definitions.
+The manuscript, its figures, the derived result tables and the analysis code
+that produces them are kept with the paper rather than here.
 
 ## Method
 
@@ -33,15 +33,12 @@ sweeps vary.
 | [main.py](main.py), [configs/](configs/) | Entry point and model configuration |
 | [nnet/](nnet/) | The model: HRVQ tokenizer, transformer world model, actor-critic, training loop |
 | [experiments/](experiments/) | Sweep definitions, setup scripts and SLURM array jobs |
-| [scripts/](scripts/) | Checkpoint diagnostics, figure generation and table emitters |
-| [analysis_pta/](analysis_pta/) | Seed-level statistics and the LaTeX table emitters |
 | [IRIS/](IRIS/) | The cross-architecture HRVQ port |
 
 Run output is deliberately not versioned. Training writes checkpoints and replay
-buffers to `callbacks/`, raw stdout to `logs/`, and the analysis scripts write
-derived tables and figures to `results/`, `figures/` and `analysis_pta/*.csv`.
-All of those are ignored. The W&B run history and the SLURM stdout logs are the
-sources of truth, and the scripts here rebuild every table and figure from them.
+buffers to `callbacks/` and raw stdout to `logs/`, both ignored. The W&B run
+history and the SLURM stdout logs are the source of truth for every result the
+paper reports.
 
 ## Installation
 
@@ -98,11 +95,9 @@ powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -LowVRAM
 ```
 
 On SLURM, [experiments/isca_setup.sh](experiments/isca_setup.sh) builds the
-environment and the `isca_*.slurm` array jobs run the sweeps.
-[scripts/gen_isca_manifest.py](scripts/gen_isca_manifest.py) emits one manifest
-row per (game, condition, seed) and
-[scripts/isca_launch.py](scripts/isca_launch.py) validates it and submits the
-array.
+environment and the `isca_*.slurm` array jobs run the sweeps. Each array task
+maps to one (game, condition, seed) cell, in the order the sweep definition
+lists them.
 
 ### Codebook stitching
 
@@ -111,39 +106,6 @@ freezes each HRVQ level from a different donor game, isolating which level
 carries transferable game specificity. This is orthogonal to freeze depth: codes
 are read L0 L1 L2, with D meaning the target's own codebook and P meaning the
 foreign Pong codebook, so PPP reduces to the whole-Pong freeze-L012 condition.
-
-### Checkpoint diagnostics
-
-[scripts/mech_analysis_basic.py](scripts/mech_analysis_basic.py) scores a set of
-checkpoints on one shared held-out frame batch, computing per level the active
-code set, its overlap with the source, the residual quantization error and the
-codebook drift. [scripts/run_diagnostics.py](scripts/run_diagnostics.py) drives
-it from the manifest in
-[configs/diagnostics/transfer.yaml](configs/diagnostics/transfer.yaml), and
-[scripts/diagnostics_aggregate.py](scripts/diagnostics_aggregate.py) collapses
-the per-seed output into per-condition tables.
-
-```
-python scripts/gen_diag_frames.py
-python scripts/run_diagnostics.py --manifest configs/diagnostics/transfer.yaml --dry_run
-python scripts/run_diagnostics.py --manifest configs/diagnostics/transfer.yaml
-python scripts/diagnostics_aggregate.py --root results/diagnostics
-```
-
-### Statistics and tables
-
-[analysis_pta/](analysis_pta/) rebuilds every number the paper reports.
-`build_returns.py` assembles the per-seed near-final return table from the SLURM
-logs and the W&B export, `stats.py` computes the human-normalized IQM and
-bootstrap intervals, `core_vocab.py` measures cross-game consistency of the
-adopted level-0 codes, and `emit_tex.py` writes the LaTeX table bodies. Nothing
-in the tables is hand-typed.
-
-```
-python analysis_pta/build_returns.py
-python analysis_pta/stats.py
-python analysis_pta/emit_tex.py
-```
 
 ## Cross-Architecture Replication (IRIS)
 
