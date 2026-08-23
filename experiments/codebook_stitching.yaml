@@ -1,0 +1,52 @@
+# Codebook-stitching ablation across eval games.
+#
+# Per eval game we freeze each RVQ codebook level from one of two donors:
+#   match = the eval game's own from-scratch codebook (the "matched" donor)
+#   pong  = the Pong source codebook (the "foreign" donor, same for every game)
+# The encoder / world-model / actor-critic train from random init; only the
+# per-level donor varies. This isolates which RVQ level carries game-specificity.
+#
+# Driven by:
+#   experiments/isca_setup.sh        -> stages pong + every game's donor into transfer_ckpt/
+#   experiments/isca_stitch.slurm    -> sbatch --export=ALL,GAME=<game> ...   (one node per job)
+# Analysis: scripts/stitch_logs_to_table.py --game <game>
+
+run_name: hrvq_stitch
+
+base_args:
+  eval_period_epoch: 5
+  keep_last_k: 3
+  precision: bfloat16            # bf16 across all stitch cells: A100-friendly, matches freeze-L012 baselines
+
+# Foreign donor (same Pong source codebook for every eval game).
+foreign_donor:
+  name: pong
+  ckpt: transfer_ckpt/pong_seed5_best.ckpt
+  artifact: haso-university-of-the-west-of-england/nnet/pong-source-checkpoints:pong-seed5-source
+
+# Eval games. Each matched donor is that game's own from-scratch codebook, pinned on W&B.
+# baseline (all-foreign, == PPP cell) near-final is the freeze-L012 Pong->game reference.
+games:
+  demon_attack:
+    ckpt: transfer_ckpt/demon_attack_donor.ckpt
+    artifact: haso-university-of-the-west-of-england/nnet/baseline-demon_attack-seed4:da-seed4-source
+    baseline_ppp: 502            # freeze-L012 Pong->DA near-final
+  ms_pacman:
+    ckpt: transfer_ckpt/ms_pacman_donor.ckpt
+    artifact: haso-university-of-the-west-of-england/nnet/best-checkpoint:mspacman-donor   # hoh3fw84 (seed2), best-eval
+    baseline_ppp: null           # set from MsPacman freeze-L012 once known
+  up_n_down:
+    ckpt: transfer_ckpt/up_n_down_donor.ckpt
+    artifact: haso-university-of-the-west-of-england/nnet/baseline-up_n_down-seed4:upndown-donor
+    baseline_ppp: null
+
+# 2^3 factorial cells, game-agnostic. Read name as L0.L1.L2 donors (D=match, P=foreign).
+# Array index = cell_index*3 + seed; priority order = singles + ceiling first, then pairs.
+cells:
+  - {name: DPP, map: "0:match,1:pong,2:pong",   seeds: [0, 1, 2], desc: "matched coarse (single)"}
+  - {name: PDP, map: "0:pong,1:match,2:pong",   seeds: [0, 1, 2], desc: "matched mid (single)"}
+  - {name: PPD, map: "0:pong,1:pong,2:match",   seeds: [0, 1, 2], desc: "matched fine (single)"}
+  - {name: DDD, map: "0:match,1:match,2:match", seeds: [0, 1, 2], desc: "all matched (ceiling)"}
+  - {name: DDP, map: "0:match,1:match,2:pong",  seeds: [0, 1, 2], desc: "coarse+mid (pair)"}
+  - {name: PDD, map: "0:pong,1:match,2:match",  seeds: [0, 1, 2], desc: "mid+fine (pair)"}
+  - {name: DPD, map: "0:match,1:pong,2:match",  seeds: [0, 1, 2], desc: "coarse+fine (double-cut)"}
