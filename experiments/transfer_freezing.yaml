@@ -1,7 +1,14 @@
-# Transfer-freezing sweep: Pong checkpoint -> Breakout
-# Consumed by setup_transfer.ps1
+# Codebook transfer sweep: a Pong source checkpoint into one target game.
+#
+# The conditions below are the ladder and controls reported in the paper. Set
+# env_name to the target: atari100k-breakout, atari100k-demon_attack,
+# atari100k-ms_pacman or atari100k-up_n_down.
+#
+# Consumed by experiments/setup_transfer.ps1 (local) and, through the generated
+# run manifest, by experiments/isca_transfer.slurm (SLURM).
 
-transfer_checkpoint_artifact: haso-university-of-the-west-of-england/nnet/best-checkpoint:v50
+transfer_checkpoint: transfer_ckpt/pong_seed5_best.ckpt
+transfer_checkpoint_artifact: haso-university-of-the-west-of-england/nnet/pong-source-checkpoints:pong-seed5-source
 env_name: atari100k-breakout
 run_name: hrvq_transfer
 
@@ -11,41 +18,58 @@ base_args:
   keep_last_k: 3
 
 # Each experiment runs once per seed in its `seeds` list.
-# freeze_levels: null | "0" | "0,1" | "0,1,2"
-# freeze_encoder: true | false
+#   transfer:       load the source checkpoint at all (default true)
+#   freeze_levels:  null | "0" | "0,1" | "0,1,2"; a condition transfers exactly
+#                   the levels it pins, so unpinned levels start from random init
+#   init_encoder:   source-initialise the encoder CNN, still trainable
+#   freeze_encoder: source-initialise the encoder CNN and hold it fixed
+#   transfer_all:   warm-start every weight the two games share
 experiments:
-  - name: warmstart
-    description: Transfer codebooks only, nothing frozen
-    freeze_levels: null
-    freeze_encoder: false
+  - name: from-scratch
+    description: Baseline, nothing transferred
+    transfer: false
     seeds: [0, 1, 2]
 
-  - name: freeze-L0
-    description: Transfer + freeze VQ level 0 (coarsest)
+  - name: adapt-CB012
+    description: Transfer all three codebook levels, pin none
+    freeze_levels: null
+    seeds: [0, 1, 2]
+
+  - name: freeze-CB0
+    description: Transfer and pin the earliest residual level
     freeze_levels: "0"
-    freeze_encoder: false
     seeds: [0, 1, 2]
 
-  - name: freeze-L01
-    description: Transfer + freeze VQ levels 0,1
+  - name: freeze-CB01
+    description: Transfer and pin levels 0 and 1
     freeze_levels: "0,1"
-    freeze_encoder: false
     seeds: [0, 1, 2]
 
-  - name: freeze-L012
-    description: Transfer + freeze all VQ levels 0,1,2
+  - name: freeze-CB012
+    description: Transfer and pin the whole codebook
     freeze_levels: "0,1,2"
-    freeze_encoder: false
     seeds: [0, 1, 2]
 
-  - name: freeze-enc
-    description: Transfer encoder CNN + freeze encoder (VQ trainable)
+  - name: adapt-CB012+encinit
+    description: Transfer the codebook and the encoder, pin neither
     freeze_levels: null
-    freeze_encoder: true
+    init_encoder: true
     seeds: [0, 1, 2]
 
-  - name: freeze-all
-    description: Full frozen backbone (encoder + all VQ levels)
+  - name: freeze-CB012+encinit
+    description: Pin the whole codebook, source-initialise the encoder
     freeze_levels: "0,1,2"
-    freeze_encoder: true
+    init_encoder: true
+    seeds: [0, 1, 2]
+
+  # Controls
+  - name: freeze-CBrand012
+    description: Pin all three levels at random init, no donor
+    transfer: false
+    freeze_levels: "0,1,2"
+    seeds: [0, 1, 2]
+
+  - name: whole-model-transfer
+    description: Warm-start every shared weight, pin nothing
+    transfer_all: true
     seeds: [0, 1, 2]

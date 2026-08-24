@@ -690,6 +690,7 @@ class Model(modules.Module):
             wandb.config.update({
                 "freeze_levels": getattr(self, '_freeze_levels', None),
                 "freeze_encoder": getattr(self, '_freeze_encoder', False),
+                "init_encoder": getattr(self, '_init_encoder', False),
                 "transfer_source": getattr(self, '_transfer_source', None),
                 "transfer_all": getattr(self, '_transfer_all', False),
             }, allow_val_change=True)

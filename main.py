@@ -65,85 +65,61 @@ def main(args):
     # Load Model
     model = functions.load_model(args)
 
-    # Codebook Cross-Transfer / Stitching and Freezing
+    # Codebook Cross-Transfer and Freezing
     if (args.transfer_checkpoint is not None or args.freeze_levels is not None
-            or args.freeze_encoder or args.codebook_map is not None):
+            or args.freeze_encoder or args.init_encoder):
         from nnet.modules.twister.hrvq.transfer import (
             _load_source_state, load_and_transfer_codebooks, load_and_transfer_encoder,
-            print_parameter_audit, parse_codebook_map, load_and_transfer_codebook_map,
-            print_codebook_provenance, verify_codebook_map,
-            load_and_transfer_all, print_transfer_provenance,
+            load_and_transfer_all, print_transfer_provenance, print_parameter_audit,
         )
 
-        if args.codebook_map is not None:
-            # Per-level codebook stitching: each RVQ level's codebook is sourced
-            # from a (possibly different) donor checkpoint, then ALL levels are
-            # frozen so the donor codebooks are preserved (EMA off). The encoder,
-            # world model and actor-critic train normally from random init.
-            level_map = parse_codebook_map(args.codebook_map, args.codebook_sources)
-            state_cache = load_and_transfer_codebook_map(model, level_map)
-            model.encoder_network.hrvq.freeze_levels([0, 1, 2])
-            print_codebook_provenance(level_map)
-            # Bit-exact check that each frozen level matches its donor before we
-            # spend hours training on a possibly mis-stitched codebook.
-            verify_codebook_map(model, level_map, state_cache)
-            del state_cache
-            print("Frozen VQ levels: [0, 1, 2] (codebook stitching)")
+        freeze_levels = [int(x) for x in args.freeze_levels.split(",")] if args.freeze_levels else []
 
-            # Store stitching metadata for W&B logging
-            model._codebook_map = args.codebook_map
-            model._codebook_sources = args.codebook_sources
-            model._freeze_levels = "0,1,2"
-            model._transfer_source = None
-            model._freeze_encoder = False
-            model._transfer_all = False
+        # Cross-transfer: load checkpoint once, pass state dict to both functions
+        if args.transfer_checkpoint is not None:
+            source_state = _load_source_state(model, args.transfer_checkpoint)
 
-        else:
-            freeze_levels = [int(x) for x in args.freeze_levels.split(",")] if args.freeze_levels else []
+            if args.transfer_all:
+                # Whole-model transfer: the encoder, codebooks, world model,
+                # decoder and the reward, value and continue heads all warm-start
+                # from the source, and only the action-conditioned modules are
+                # re-initialised. The encoder arrives here, so the codebook-only
+                # path is skipped.
+                summary = load_and_transfer_all(model, args.transfer_checkpoint, source_state)
+                print_transfer_provenance(summary, args.transfer_checkpoint)
+            else:
+                transfer_levels = freeze_levels if freeze_levels else [0, 1, 2]
+                load_and_transfer_codebooks(model, args.transfer_checkpoint, transfer_levels, source_state)
 
-            # Cross-transfer: load checkpoint once, pass state dict to both functions
-            if args.transfer_checkpoint is not None:
-                source_state = _load_source_state(model, args.transfer_checkpoint)
+                # Source-initialise the encoder CNN alongside the codebooks.
+                # --init_encoder leaves it trainable, --freeze_encoder pins it.
+                if args.freeze_encoder or args.init_encoder:
+                    load_and_transfer_encoder(model, args.transfer_checkpoint, source_state)
 
-                if args.transfer_all:
-                    # Weight-transfer baseline: encoder, codebooks, world model,
-                    # decoder and the reward/value/continue heads all warm-start
-                    # from the source; only the action-conditioned modules are
-                    # re-initialised. The encoder comes across here, so the
-                    # codebook-only path below is skipped entirely.
-                    summary = load_and_transfer_all(model, args.transfer_checkpoint, source_state)
-                    print_transfer_provenance(summary, args.transfer_checkpoint)
-                else:
-                    transfer_levels = freeze_levels if freeze_levels else [0, 1, 2]
-                    load_and_transfer_codebooks(model, args.transfer_checkpoint, transfer_levels, source_state)
+            del source_state  # Free memory
+        elif args.freeze_encoder:
+            print("WARNING: --freeze_encoder without --transfer_checkpoint freezes the current encoder weights as-is")
 
-                    # Transfer encoder CNN weights alongside codebooks
-                    if args.freeze_encoder:
-                        load_and_transfer_encoder(model, args.transfer_checkpoint, source_state)
+        # Freeze specified VQ levels
+        if freeze_levels:
+            model.encoder_network.hrvq.freeze_levels(freeze_levels)
+            print(f"Frozen VQ levels: {freeze_levels}")
 
-                del source_state  # Free memory
-            elif args.freeze_encoder:
-                print("WARNING: --freeze_encoder without --transfer_checkpoint freezes the current encoder weights as-is")
+        # Freeze encoder CNN. The _frozen flag is what makes this stick: train_step
+        # re-enables grads on whole networks every step, so a bare
+        # requires_grad_(False) here would be reverted after the first step.
+        if args.freeze_encoder:
+            for p in model.encoder_network.cnn.parameters():
+                p._frozen = True
+                p.requires_grad_(False)
+            print("Frozen encoder CNN")
 
-            # Freeze specified VQ levels
-            if freeze_levels:
-                model.encoder_network.hrvq.freeze_levels(freeze_levels)
-                print(f"Frozen VQ levels: {freeze_levels}")
-
-            # Freeze encoder CNN. The _frozen flag is what makes this stick:
-            # train_step re-enables grads on whole networks every step, so a bare
-            # requires_grad_(False) here is reverted after the first step.
-            if args.freeze_encoder:
-                for p in model.encoder_network.cnn.parameters():
-                    p._frozen = True
-                    p.requires_grad_(False)
-                print("Frozen encoder CNN")
-
-            # Store freeze/transfer metadata for W&B logging
-            model._freeze_levels = args.freeze_levels
-            model._transfer_source = args.transfer_checkpoint
-            model._freeze_encoder = args.freeze_encoder
-            model._transfer_all = args.transfer_all
+        # Store freeze/transfer metadata for W&B logging
+        model._freeze_levels = args.freeze_levels
+        model._transfer_source = args.transfer_checkpoint
+        model._freeze_encoder = args.freeze_encoder
+        model._init_encoder = args.init_encoder
+        model._transfer_all = args.transfer_all
 
         # Parameter audit
         print_parameter_audit(model)
@@ -233,11 +209,10 @@ if __name__ == "__main__":
 
     # Codebook Freezing / Transfer
     parser.add_argument("--freeze_levels",              type=str,   default=None,                                                       help="Comma-separated VQ levels to freeze, e.g. '0,1'")
-    parser.add_argument("--freeze_encoder",             action="store_true",                                                            help="Freeze encoder CNN (use with --transfer_checkpoint to transfer+freeze)")
+    parser.add_argument("--freeze_encoder",             action="store_true",                                                            help="Source-initialise the encoder CNN from --transfer_checkpoint and hold it fixed")
+    parser.add_argument("--init_encoder",               action="store_true",                                                            help="Source-initialise the encoder CNN from --transfer_checkpoint but leave it trainable")
     parser.add_argument("--transfer_checkpoint",        type=str,   default=None,                                                       help="Path to checkpoint for VQ codebook cross-transfer")
     parser.add_argument("--transfer_all",               action="store_true",                                                            help="Weight-transfer baseline: warm-start every task-agnostic weight (encoder, codebooks, world model, decoder, reward/value/continue heads) from --transfer_checkpoint. Action-conditioned modules are re-initialised. Nothing is frozen unless --freeze_* is also given.")
-    parser.add_argument("--codebook_map",               type=str,   default=None,                                                       help="Per-level codebook stitching, e.g. '0:pong,1:da,2:da'. Each level frozen from its donor. Requires --codebook_sources.")
-    parser.add_argument("--codebook_sources",           type=str,   default=None,                                                       help="Donor name->checkpoint paths for --codebook_map, e.g. 'pong=transfer_ckpt/pong_seed5_best.ckpt,da=transfer_ckpt/da_seed4_best.ckpt'")
 
     # Debug
     parser.add_argument("--detect_anomaly",             action="store_true",                                                            help="Enable or disable the autograd anomaly detection")
@@ -266,48 +241,20 @@ if __name__ == "__main__":
                 "got {!r}".format(args.freeze_levels)
             )
 
-    if args.freeze_encoder and args.transfer_checkpoint is None and args.codebook_map is None:
+    if args.freeze_encoder and args.transfer_checkpoint is None:
         parser.error(
             "--freeze_encoder requires --transfer_checkpoint (freezing a randomly "
             "initialised encoder is never intended)"
         )
 
+    if args.init_encoder:
+        if args.transfer_checkpoint is None:
+            parser.error("--init_encoder requires --transfer_checkpoint (there is nothing to initialise from)")
+        if args.freeze_encoder:
+            parser.error("--init_encoder is redundant with --freeze_encoder, which already source-initialises the encoder")
+
     if args.transfer_all and args.transfer_checkpoint is None:
         parser.error("--transfer_all requires --transfer_checkpoint (there is nothing to transfer from)")
-
-    # Codebook stitching validation: --codebook_map is its own self-contained
-    # transfer path (it implies freezing all levels), so it is mutually exclusive
-    # with the single-source --transfer_checkpoint / --freeze_levels flags.
-    if args.codebook_map is not None:
-        if args.codebook_sources is None:
-            parser.error("--codebook_map requires --codebook_sources")
-        if args.transfer_checkpoint is not None or args.freeze_levels is not None:
-            parser.error(
-                "--codebook_map is mutually exclusive with --transfer_checkpoint / "
-                "--freeze_levels (it transfers and freezes all levels itself)"
-            )
-        if args.transfer_all:
-            parser.error(
-                "--codebook_map is mutually exclusive with --transfer_all (stitching "
-                "sources codebooks per level; the weight-transfer baseline takes a "
-                "single source model wholesale)"
-            )
-        # Validate the spec parses and every donor checkpoint exists, before
-        # building the model -- catches typos at second 0, not minutes in.
-        from nnet.modules.twister.hrvq.transfer import parse_codebook_map
-        try:
-            level_map = parse_codebook_map(args.codebook_map, args.codebook_sources)
-        except ValueError as e:
-            parser.error(str(e))
-        for lvl, (donor, path) in level_map.items():
-            if not os.path.isfile(path):
-                parser.error(
-                    "--codebook_map donor '{}' (level {}) checkpoint does not exist: {}".format(
-                        donor, lvl, path
-                    )
-                )
-    elif args.codebook_sources is not None:
-        parser.error("--codebook_sources is only used with --codebook_map")
 
     # Run main
     main(args)

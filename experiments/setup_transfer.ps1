@@ -1,46 +1,52 @@
-# ECHELON Transfer-Freezing Experiment Setup (Pong -> Breakout)
+# ECHELON codebook transfer sweep, run locally on one GPU.
 #
-# Usage (run from anywhere - the script chdirs to the repo root):
-#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1              # setup + print commands
-#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Run         # setup + run ALL experiments
-#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Only freeze-L0   # setup + run one
-#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -SkipSetup -Run   # skip env setup, just run
-#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Run -LowVRAM     # 8GB GPUs (RTX 3070): bf16 + memory tweaks
+# Usage (run from anywhere; the script chdirs to the repo root):
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1                    # setup + print commands
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Run               # setup + run every condition
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Only freeze-CB0   # setup + run one condition
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -SkipSetup -Run    # skip env setup, just run
+#   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Run -LowVRAM      # 8GB GPUs: bf16 + memory tweaks
 #
-# Experiment definitions live in experiments\transfer_freezing.yaml.
+# Conditions and target game are defined in experiments\transfer_freezing.yaml.
 
 param(
     [switch]$Run,
     [string]$Only = "",
     [switch]$SkipSetup,
-    [switch]$LowVRAM   # 8GB GPUs (e.g. RTX 3070): bf16 + memory tweaks. Opt-in; off by default.
+    [switch]$LowVRAM   # 8GB GPUs: bf16 + memory tweaks. Opt-in; off by default.
 )
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "ECHELON transfer-freezing setup (Pong -> Breakout)" -ForegroundColor Cyan
+Write-Host "ECHELON codebook transfer setup" -ForegroundColor Cyan
 
-# Low-VRAM profile for 8GB cards (RTX 3070). Opt-in via -LowVRAM so default
-# launches are byte-for-byte unchanged. bf16 keeps the HRVQ logit cascade off
-# the fp16 overflow path while engaging Ampere tensor cores; expandable_segments
-# lets the allocator reclaim memory instead of fragmenting; figure logging is
-# disabled per-run below (purely W&B media, no effect on transfer metrics).
+# Low-VRAM profile for 8GB cards, opt-in so default launches are unchanged.
+# bf16 keeps the HRVQ logit cascade off the fp16 overflow path while engaging
+# Ampere tensor cores, expandable_segments lets the allocator reclaim memory
+# instead of fragmenting, and figure logging is disabled per run below.
 if ($LowVRAM) {
     $env:override_config = '{"precision":"bfloat16"}'
     $env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
     Write-Host "LowVRAM profile ON: precision=bfloat16, expandable_segments=True, figure logging disabled" -ForegroundColor Magenta
 }
 
-# Resolve repo root (parent of this script's folder) and chdir there so all
-# relative paths (nnet/, main.py, transfer_ckpt/) resolve correctly no matter
-# where the script was invoked from.
+# Resolve the repo root and chdir there so relative paths (nnet/, main.py,
+# transfer_ckpt/) resolve wherever the script was invoked from.
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepoRoot
 Write-Host "Repo root: $RepoRoot" -ForegroundColor DarkGray
 
-# Pong checkpoint to transfer FROM (W&B artifact pinned to the seed5 Pong run)
-$PongArtifact = "haso-university-of-the-west-of-england/nnet/pong-source-checkpoints:pong-seed5-source"
 $ConfigFile = Join-Path $PSScriptRoot "transfer_freezing.yaml"
+$ConfigFileFwd = $ConfigFile -replace '\\', '/'
+
+# Source checkpoint and its W&B artifact, both named by the sweep definition.
+$srcSpec = python -c @"
+import yaml
+cfg = yaml.safe_load(open('$ConfigFileFwd'))
+print(cfg['transfer_checkpoint']); print(cfg['transfer_checkpoint_artifact'])
+"@
+$PongCkpt = $srcSpec[0]
+$PongArtifact = $srcSpec[1]
 
 if (-not $SkipSetup) {
 
@@ -89,32 +95,28 @@ if (-not $SkipSetup) {
     powercfg /change standby-timeout-ac 0
     powercfg /change hibernate-timeout-ac 0
 
-    Write-Host "[8/8] Downloading Pong checkpoint from W&B ($PongArtifact)..."
+    Write-Host "[8/8] Downloading the source checkpoint from W&B ($PongArtifact)..."
     python -c @"
-import wandb, shutil, os, glob
-api = wandb.Api()
-art = api.artifact('$PongArtifact')
-d = art.download(root='transfer_ckpt')
-# Find the .ckpt file inside the artifact regardless of its name
+import glob, os, shutil, wandb
+d = wandb.Api().artifact('$PongArtifact').download(root='transfer_ckpt')
 ckpts = glob.glob(os.path.join(d, '*.ckpt'))
 if not ckpts:
     raise FileNotFoundError(f'No .ckpt in {d}')
 src = max(ckpts, key=os.path.getsize)
-dst = 'transfer_ckpt/pong_seed5_best.ckpt'
+dst = '$PongCkpt'
 if os.path.abspath(src) != os.path.abspath(dst):
     shutil.copyfile(src, dst)
 print('DOWNLOADED:', dst)
 "@
 }
 
-$env:TRANSFER_CKPT = (Resolve-Path "transfer_ckpt/pong_seed5_best.ckpt").Path
+$env:TRANSFER_CKPT = (Resolve-Path $PongCkpt).Path
 Write-Host "  TRANSFER_CKPT = $env:TRANSFER_CKPT" -ForegroundColor Green
 
-# ---- Parse experiments YAML via python and emit a flat job list ----
-# Each line: <exp_name>|<seed>|<freeze_levels_or_empty>|<freeze_encoder 0|1>|<env_name>|<run_name>|<eval_period>|<keep_last_k>|<description>
-$ConfigFileFwd = $ConfigFile -replace '\\', '/'
+# ---- Parse the sweep definition into a flat job list ----
+# Each line: name|seed|freeze_levels|freeze_encoder|init_encoder|transfer|transfer_all|env_name|run_name|eval_period|keep_last_k|description
 $parser = @"
-import yaml, sys
+import yaml
 cfg = yaml.safe_load(open('$ConfigFileFwd'))
 env_name = cfg['env_name']
 run_name = cfg['run_name']
@@ -122,11 +124,19 @@ base = cfg.get('base_args', {})
 eval_p = base.get('eval_period_epoch', 5)
 keep_k = base.get('keep_last_k', 3)
 for exp in cfg['experiments']:
-    fl = exp.get('freeze_levels') or ''
-    fe = 1 if exp.get('freeze_encoder') else 0
-    desc = exp.get('description', '')
+    fields = [
+        exp['name'], None,
+        exp.get('freeze_levels') or '',
+        int(bool(exp.get('freeze_encoder'))),
+        int(bool(exp.get('init_encoder'))),
+        int(exp.get('transfer', True)),
+        int(bool(exp.get('transfer_all'))),
+        env_name, run_name, eval_p, keep_k,
+        exp.get('description', ''),
+    ]
     for seed in exp['seeds']:
-        print(f'{exp[\"name\"]}|{seed}|{fl}|{fe}|{env_name}|{run_name}|{eval_p}|{keep_k}|{desc}')
+        fields[1] = seed
+        print('|'.join(str(f) for f in fields))
 "@
 $jobLines = python -c $parser
 if ($LASTEXITCODE -ne 0) {
@@ -143,11 +153,14 @@ foreach ($line in $jobLines) {
         Seed           = [int]$p[1]
         FreezeLevels   = $p[2]
         FreezeEncoder  = ($p[3] -eq '1')
-        EnvName        = $p[4]
-        RunName        = $p[5]
-        EvalPeriod     = [int]$p[6]
-        KeepLastK      = [int]$p[7]
-        Description    = $p[8]
+        InitEncoder    = ($p[4] -eq '1')
+        Transfer       = ($p[5] -eq '1')
+        TransferAll    = ($p[6] -eq '1')
+        EnvName        = $p[7]
+        RunName        = $p[8]
+        EvalPeriod     = [int]$p[9]
+        KeepLastK      = [int]$p[10]
+        Description    = $p[11]
     }
 }
 
@@ -156,21 +169,30 @@ function Get-LaunchArgs($job) {
         "main.py", "--wandb",
         "--seed", $job.Seed,
         "--eval_period_epoch", $job.EvalPeriod,
-        "--keep_last_k", $job.KeepLastK,
-        "--transfer_checkpoint", $env:TRANSFER_CKPT
+        "--keep_last_k", $job.KeepLastK
     )
+    if ($job.Transfer) {
+        $launch += @("--transfer_checkpoint", $env:TRANSFER_CKPT)
+    }
+    if ($job.TransferAll) {
+        $launch += "--transfer_all"
+    }
     if ($job.FreezeLevels -ne "") {
         $launch += @("--freeze_levels", $job.FreezeLevels)
     }
     if ($job.FreezeEncoder) {
         $launch += "--freeze_encoder"
     }
+    if ($job.InitEncoder) {
+        $launch += "--init_encoder"
+    }
     if ($LowVRAM) {
-        # Disable per-epoch figure logging: its decoder reconstruction is the
-        # biggest periodic VRAM spike and is irrelevant to transfer metrics.
+        # Per-epoch figure logging is the biggest periodic VRAM spike and does
+        # not affect the transfer metrics.
         $launch += @("--log_figure_period_epoch", 9999)
     }
-    $launch += @("--wandb_name", "transfer/breakout/$($job.Name)/seed$($job.Seed)")
+    $target = $job.EnvName -replace '^atari100k-', ''
+    $launch += @("--wandb_name", "transfer/$target/$($job.Name)/seed$($job.Seed)")
     return ,$launch
 }
 
@@ -179,9 +201,9 @@ Write-Host "Setup complete" -ForegroundColor Green
 Write-Host ""
 Write-Host "=== Experiments loaded from $ConfigFile ===" -ForegroundColor Cyan
 foreach ($job in $jobs) {
-    $tag = "[{0}] seed={1}  freeze_levels='{2}'  freeze_encoder={3}" -f `
-        $job.Name, $job.Seed, $job.FreezeLevels, $job.FreezeEncoder
-    Write-Host "  $tag  -- $($job.Description)"
+    $tag = "[{0}] seed={1}  freeze_levels='{2}'  freeze_encoder={3}  init_encoder={4}" -f `
+        $job.Name, $job.Seed, $job.FreezeLevels, $job.FreezeEncoder, $job.InitEncoder
+    Write-Host "  $tag  $($job.Description)"
 }
 Write-Host ""
 
