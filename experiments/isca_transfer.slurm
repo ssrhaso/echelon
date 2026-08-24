@@ -1,15 +1,12 @@
 #!/bin/bash
-# ISCA (Exeter HPC) job array for the isca-aug26 sprint: the four target-game ladders
-# (Ms Pac-Man, Asterix, Up'n'Down, Demon Attack), 7 cells x 5 seeds each.
+# Job array for the per-game transfer ladders: one array task runs one row of the
+# manifest CSV on one GPU, so a 2-GPU node hosts two independent runs. Row N of the
+# manifest (0-indexed, header excluded) is array task N.
 #
-# Each array task runs exactly ONE row of the manifest CSV on ONE GPU, so a 2-GPU A100
-# node hosts two independent runs. Row N of the manifest (0-indexed, header excluded)
-# is array task N.
+# Check before submitting that the manifest uses one precision throughout and that
+# the source checkpoint is staged (experiments/isca_setup.sh).
 #
-# Validate the manifest before submitting: one precision across the sweep, the donor
-# checkpoint staged, and the protected source run left untouched.
-#
-# Watch: squeue --me ; tail -f logs/aug26_*.out
+# Watch: squeue --me ; tail -f logs/transfer_*.out
 
 #SBATCH --export=ALL
 #SBATCH -D .
@@ -22,20 +19,20 @@
 #SBATCH --mem=100G
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=H.Ahmad@exeter.ac.uk
-#SBATCH -o logs/aug26_%A_%a.out
-#SBATCH -e logs/aug26_%A_%a.err
+#SBATCH -o logs/transfer_%A_%a.out
+#SBATCH -e logs/transfer_%A_%a.err
 
 set -u
 
-MANIFEST="${MANIFEST:-experiments/isca_aug26_manifest.csv}"
+MANIFEST="${MANIFEST:-experiments/isca_transfer_manifest.csv}"
 i=$SLURM_ARRAY_TASK_ID
 
-# --- env (matches experiments/isca_setup.sh) ---
-# Done BEFORE the manifest is parsed: parsing needs the env's python, and the login
-# node's bare `python` is not guaranteed to exist.
+# --- env (built by experiments/isca_setup.sh) ---
+# Activated before the manifest is parsed, since parsing needs the environment's
+# python and the login node's bare `python` may not exist.
 module load Anaconda3 2>/dev/null || true
 source activate "$HOME/echelon-env" 2>/dev/null || conda activate "$HOME/echelon-env"
-cd "$HOME/echelon"   # /lustre/home/$USER/echelon -- checkpoints + logs persist here
+cd "$HOME/echelon"   # on shared storage, so checkpoints and logs persist
 
 # --- read row i of the manifest (skip header; row i is line i+2) ---
 if [ ! -f "$MANIFEST" ]; then
@@ -57,8 +54,8 @@ for k in ("game", "condition", "seed", "precision", "tag", "wandb_name", "env_na
           "run_name", "freeze_levels", "freeze_encoder", "transfer_checkpoint",
           "override_config"):
     print("ROW_%s=%s" % (k.upper(), shlex.quote(r[k])))
-# Added with the weight-transfer baseline. Read with .get so this script still
-# parses the original aug26 manifest, which has no such column.
+# Read with .get: manifests written before the whole-model-transfer baseline
+# have no such column.
 print("ROW_TRANSFER_ALL=%s" % shlex.quote(r.get("transfer_all", "0")))
 PY
 )"
@@ -66,25 +63,21 @@ PY
 export env_name="$ROW_ENV_NAME"
 export run_name="$ROW_RUN_NAME"
 
-# Precision. This env var is the ONLY thing that sets precision in this codebase;
-# it is now also written into wandb.config at startup by nnet/models/model.py, so no
-# future audit has to reconstruct it from stdout.
+# Precision is set only through this env var, and nnet/models/model.py records it
+# in wandb.config at startup so it need not be recovered from stdout.
 export override_config="$ROW_OVERRIDE_CONFIG"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
 
 export WANDB_TAGS="$ROW_TAG"
 
-# Per-task isolation. Two tasks share a node here (no --exclusive, unlike
-# isca_stitch.slurm), so every path wandb might contend on gets a task-unique
-# directory -- the service socket lives under TMPDIR and a shared one is what
-# cross-contaminated concurrent runs previously.
+# Per-task isolation. Two tasks share a node here, so every path wandb may contend
+# on gets a task-unique directory; the service socket lives under TMPDIR and a
+# shared one cross-contaminates concurrent runs.
 #
-# Node-local scratch is preferred (fast, wiped at job end), but the root of /local is
-# NOT user-writable on the ISCA gpu nodes -- creating /local/$USER fails with
-# EACCES and killed the first pilot in 90s. So probe candidates in order and take the
-# first that actually works, falling back to $HOME/tmp, which is what the working
-# isca_stitch.slurm / isca_scratch.slurm have always used.
+# Node-local scratch is preferred (fast, wiped at job end), but the root of /local
+# is not always user-writable, so probe the candidates in order and take the first
+# that works, falling back to $HOME/tmp.
 TASK_SUFFIX="${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 JOB_TMP=""
 for cand in "${SLURM_TMPDIR:-}" "/local/${SLURM_JOB_ID}" "/local/${USER}" "/local" \
@@ -108,7 +101,7 @@ export WANDB_DATA_DIR="$JOB_TMP/wandb-data"
 mkdir -p "$WANDB_CACHE_DIR" "$WANDB_CONFIG_DIR" "$WANDB_DATA_DIR"
 trap 'rm -rf "$JOB_TMP"' EXIT
 
-echo "=== isca-aug26 task $i | ${ROW_GAME} / ${ROW_CONDITION} / seed ${ROW_SEED} ==="
+echo "=== transfer task $i | ${ROW_GAME} / ${ROW_CONDITION} / seed ${ROW_SEED} ==="
 echo "    host      : $(hostname)"
 echo "    gpu       : $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "    precision : ${ROW_PRECISION}  (override_config=${ROW_OVERRIDE_CONFIG})"
@@ -122,7 +115,7 @@ ARGS=(--wandb --seed "$ROW_SEED" --eval_period_epoch 5 --keep_last_k 3
 
 if [ -n "$ROW_TRANSFER_CHECKPOINT" ]; then
     if [ ! -f "$ROW_TRANSFER_CHECKPOINT" ]; then
-        echo "ERROR: transfer source not staged at $ROW_TRANSFER_CHECKPOINT -- run experiments/isca_setup.sh" >&2
+        echo "ERROR: transfer source not staged at $ROW_TRANSFER_CHECKPOINT; run experiments/isca_setup.sh" >&2
         exit 1
     fi
     ARGS+=(--transfer_checkpoint "$ROW_TRANSFER_CHECKPOINT")

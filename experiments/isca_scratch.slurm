@@ -4,10 +4,9 @@
 # (0,1,2 = game0; 3,4,5 = game1; ...), so games complete in order.
 #   game = GAMES[i/3],  seed = i%3.
 #
-# Launch (pass the account from your working stitch script so it matches):
+# Launch:
 #   cd ~/echelon
-#   ACCT=$(grep -m1 '#SBATCH -A' experiments/isca_stitch.slurm | awk '{print $3}')
-#   sbatch -A "$ACCT" experiments/isca_scratch.slurm
+#   sbatch -A <account> experiments/isca_scratch.slurm
 # Watch: squeue --me ; tail -f logs/scratch_*_*.out
 
 #SBATCH --export=ALL
@@ -17,7 +16,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
-#SBATCH --exclusive          # whole node per job: cures wandb service-socket cross-contamination
+#SBATCH --exclusive          # whole node per job: keeps the wandb service socket per-run
 #SBATCH --array=0-59%6       # 60 tasks (20 games x 3 seeds); %6 = 2 games in flight, in order
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=H.Ahmad@exeter.ac.uk
@@ -35,13 +34,13 @@ i=$SLURM_ARRAY_TASK_ID
 GAME=${GAMES[$((i/3))]}
 SEED=$((i%3))
 
-# --- env (match isca_stitch.slurm) ---
+# --- env (built by experiments/isca_setup.sh) ---
 module load Anaconda3 2>/dev/null || true
 source activate "$HOME/echelon-env" 2>/dev/null || conda activate "$HOME/echelon-env"
 cd "$HOME/echelon"
 
 export env_name="atari100k-${GAME}" run_name=hrvq_baseline
-export override_config='{"precision":"bfloat16"}'   # bf16: A100-friendly, matches existing baselines
+export override_config='{"precision":"bfloat16"}'   # bf16: A100 tensor cores, and the baseline precision
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Per-task isolation (unique temp + wandb dir) so concurrent tasks never cross-contaminate wandb.
 export TMPDIR="$HOME/tmp/${SLURM_JOB_ID}"; mkdir -p "$TMPDIR"

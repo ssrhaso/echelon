@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Smoke tests for SINGLE LEVEL FLAT VQ - nnet/modules/twister/fvq/ """
+"""Smoke tests for the single-level flat VQ tokenizer in nnet/modules/twister/fvq/."""
 
 import sys
 import os

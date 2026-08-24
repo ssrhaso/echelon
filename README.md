@@ -2,14 +2,14 @@
 
 Companion code for the ECHELON paper. ECHELON is a transformer world model that
 replaces the flat categorical stochastic state with a spatial Hierarchical
-Residual VQ (HRVQ) tokenizer, and uses per-level codebook freezing as the unit
-of cross-game transfer.
+Residual VQ (HRVQ) tokenizer, and uses per-level codebook pinning as the unit of
+cross-game transfer.
 
 ![ECHELON architecture: encoder CNN, 3-level HRVQ tokenizer, TSSM and decoder, with per-level codebook freezing for cross-game transfer](assets/echelon_arch.gif)
 
 This repository holds the model, its configuration and the sweep definitions.
-The manuscript, its figures, the derived result tables and the analysis code
-that produces them are kept with the paper rather than here.
+The manuscript, its figures, the derived result tables and the analysis code that
+produces them are kept with the paper rather than here.
 
 ## Method
 
@@ -22,9 +22,8 @@ left by the level above it, with EMA codebook updates and dead-code revival.
 The encoder, transformer state-space model and decoder consume per-position
 cascade-summed embeddings from the three HRVQ levels. The transfer utilities in
 [nnet/modules/twister/hrvq/transfer.py](nnet/modules/twister/hrvq/transfer.py)
-load pre-trained codebooks from a source game into a target run and freeze a
-chosen prefix of levels. That is the knob the freeze-depth and codebook-stitching
-sweeps vary.
+load pretrained codebooks from a source game into a target run and pin a chosen
+prefix of levels. That prefix is the dial the transfer sweep varies.
 
 ## Repository Layout
 
@@ -32,8 +31,7 @@ sweeps vary.
 | --- | --- |
 | [main.py](main.py), [configs/](configs/) | Entry point and model configuration |
 | [nnet/](nnet/) | The model: HRVQ tokenizer, transformer world model, actor-critic, training loop |
-| [experiments/](experiments/) | Sweep definitions, setup scripts and SLURM array jobs |
-| [IRIS/](IRIS/) | The cross-architecture HRVQ port |
+| [experiments/](experiments/) | Sweep definition, setup scripts and SLURM array jobs |
 
 Run output is deliberately not versioned. Training writes checkpoints and replay
 buffers to `callbacks/` and raw stdout to `logs/`, both ignored. The W&B run
@@ -79,14 +77,35 @@ constant within an ablation set so conditions stay comparable.
 directory for the most recent checkpoint, and `--checkpoint` loads a specific
 `.ckpt` file.
 
-## Reproducing the Experiments
+## Reproducing the Transfer Sweep
 
-### Freeze-depth transfer sweep
+[experiments/transfer_freezing.yaml](experiments/transfer_freezing.yaml) defines
+the transfer conditions under the names the paper uses, and sets the target game
+and the source checkpoint. Each condition is a combination of five flags on
+[main.py](main.py):
 
-[experiments/setup_transfer.ps1](experiments/setup_transfer.ps1) installs
-dependencies, fetches the Pong source checkpoint and emits the per-condition
-launch commands for the sweep defined in
-[experiments/transfer_freezing.yaml](experiments/transfer_freezing.yaml).
+| Flag | Effect |
+| --- | --- |
+| `--transfer_checkpoint` | Load the source checkpoint |
+| `--freeze_levels` | Pin a contiguous prefix of HRVQ levels; a condition transfers exactly the levels it pins |
+| `--init_encoder` | Source-initialise the encoder CNN, leaving it trainable |
+| `--freeze_encoder` | Source-initialise the encoder CNN and hold it fixed |
+| `--transfer_all` | Warm-start every weight the two games share, pinning nothing |
+
+Pinning a level holds its codebook at the source values, disables its EMA
+updates and drops its commitment term from the loss. Passing `--freeze_levels`
+without `--transfer_checkpoint` pins the levels at their random initialisation,
+which is the no-donor control.
+
+The conditions reported in the paper as `adapt-CB012+encinit` and
+`freeze-CB012+encinit` use `--init_encoder`: in the runs behind those numbers the
+encoder was source-initialised but never held fixed. `--freeze_encoder` in this
+codebase does hold it fixed, so it is a different intervention from the one the
+paper reports.
+
+Locally, [experiments/setup_transfer.ps1](experiments/setup_transfer.ps1) installs
+dependencies, fetches the source checkpoint and emits the per-condition launch
+commands.
 
 ```
 powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1            # setup + print commands
@@ -95,28 +114,12 @@ powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -LowVRAM
 ```
 
 On SLURM, [experiments/isca_setup.sh](experiments/isca_setup.sh) builds the
-environment and the `isca_*.slurm` array jobs run the sweeps. Each array task
-maps to one (game, condition, seed) cell, in the order the sweep definition
-lists them.
-
-### Codebook stitching
-
-[experiments/codebook_stitching.yaml](experiments/codebook_stitching.yaml)
-freezes each HRVQ level from a different donor game, isolating which level
-carries transferable game specificity. This is orthogonal to freeze depth: codes
-are read L0 L1 L2, with D meaning the target's own codebook and P meaning the
-foreign Pong codebook, so PPP reduces to the whole-Pong freeze-L012 condition.
-
-## Cross-Architecture Replication (IRIS)
-
-To test whether the freeze-transfer behaviour is specific to the ECHELON world
-model or holds more generally, the 3-level HRVQ tokenizer is also ported into
-IRIS (Micheli et al., ICLR 2023), an autoregressive-transformer world model with
-a different architecture. The port lives under [IRIS/](IRIS/) and keeps the
-upstream layout, so `python src/main.py` runs it. In that host the world model
-consumes the level-0 token stream only, so the transfer ladder reduces to the
-rungs that affect dynamics: scratch, warmstart, freeze-L0, freeze-enc and
-freeze-all.
+environment and stages the source checkpoint.
+[experiments/isca_transfer.slurm](experiments/isca_transfer.slurm) runs the
+transfer sweep and [experiments/isca_scratch.slurm](experiments/isca_scratch.slurm)
+the from-scratch baselines. Each array task of the transfer job maps to one row
+of a run manifest CSV, one (game, condition, seed) cell per row, expanded from
+the sweep definition.
 
 ## Script Options
 
@@ -140,6 +143,14 @@ freeze-all.
 # Eval
 --eval_period_epoch          type=int   default=1                       help="Model evaluation every n epochs"
 --eval_period_step           type=int   default=None                    help="Model evaluation every n steps"
+
+# Transfer
+--seed                       type=int   default=None                    help="Global random seed"
+--transfer_checkpoint        type=str   default=None                    help="Source checkpoint for codebook transfer"
+--freeze_levels              type=str   default=None                    help="Comma-separated HRVQ levels to pin, e.g. '0,1'"
+--init_encoder               action="store_true"                        help="Source-initialise the encoder CNN, still trainable"
+--freeze_encoder             action="store_true"                        help="Source-initialise the encoder CNN and hold it fixed"
+--transfer_all               action="store_true"                        help="Warm-start every weight the two games share"
 
 # Info
 --show_dict                  action="store_true"                        help="Show model dict summary"

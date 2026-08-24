@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for spatial HRVQ: component tests + full WorldModel.forward integration.
+"""Spatial HRVQ tests: per-component checks and a full WorldModel.forward
+integration pass.
 
-Run with: python nnet/modules/twister/hrvq/tests.py
-(from the ECHELON root directory)
+Run from the repository root: python nnet/modules/twister/hrvq/tests.py
 """
 
 import sys
@@ -651,8 +651,8 @@ def test_17_transfer_all_selection():
     """Weight-transfer baseline copies task-agnostic tensors and only those.
 
     Built on a stub module tree rather than a real TWISTER model so the selection
-    rule -- which is the whole content of the baseline -- is testable without an
-    env or a GPU. Source has 6 actions (Pong), target 9 (Ms Pac-Man).
+    rule, which is the whole content of the baseline, is testable without an env
+    or a GPU. Source has 6 actions (Pong), target 9 (Ms Pac-Man).
     """
     from nnet.modules.twister.hrvq.transfer import (
         load_and_transfer_all, ACTION_CONDITIONED_PREFIXES,
@@ -700,7 +700,7 @@ def test_17_transfer_all_selection():
     assert not torch.equal(same.policy_network.weight, source.policy_network.weight)
 
     # A shape difference outside the action-conditioned modules is an error, not
-    # a silent skip -- that would mean transferring less than the label claims.
+    # a silent skip, which would transfer less than the label claims.
     wrong = build(9)
     wrong.decoder_network = nn.Linear(8, 16)
     try:
@@ -721,7 +721,7 @@ def test_17_transfer_all_selection():
 
     for prefix in ACTION_CONDITIONED_PREFIXES:
         assert any(k.startswith(prefix) for k in reinit), \
-            "prefix {!r} matched nothing -- module renamed?".format(prefix)
+            "prefix {!r} matched nothing; module renamed?".format(prefix)
 
     print("  PASS  transferred={} reinit={} (action-conditioned)".format(
         len(summary["transferred"]), len(reinit)))

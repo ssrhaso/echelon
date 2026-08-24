@@ -13,10 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""WorldModel.forward body for spatial HRVQ losses.
-
-Implements cascade reconstruction, per-level CE, VQ commitment, and
-contrastive with pre-VQ features.
+"""WorldModel.forward body for spatial HRVQ losses: cascade reconstruction,
+per-level cross-entropy, VQ commitment, and contrastive loss on pre-VQ features.
 """
 
 import torch
@@ -26,29 +24,21 @@ from .decoder import spatial_cascade_decode
 
 
 def _log_encoder_drift_from_init(wm, states):
-    """Log MSE of the CNN encoder's features vs. its own epoch-0 state.
+    """Log the MSE between the encoder's current features and its step-0 features.
 
-    Mechanism probe: under codebook freezing, how far does the encoder
-    representation move from where *this run* started? The reference is the
-    run's own step-0 encoder (NOT the source encoder) - well-defined and
-    comparable across all freeze conditions:
- - freeze-enc / freeze-all: encoder never moves -> drift ≡ 0 (informative
-        by contrast, not vacuous).
- - warmstart / freeze-L*: random-init encoder trains -> drift grows,
-        comparable across runs on the same fixed batch.
+    The reference is this run's own step-0 encoder, not the source encoder, so
+    the measure is comparable across freeze conditions: a frozen encoder holds
+    drift at zero while a trainable one grows away from its initialisation.
 
-    Implementation notes (zero training footprint):
- - State lives in a plain dict on wm.outer.__dict__ -> never enters
-        state_dict, the optimizer, or EMA.
- - The CNN (Conv/LayerNorm/SiLU, no dropout/BatchNorm) is deterministic
-        given weights, so we cache reference *features* once at step 0 - no
-        encoder copy retained.
- - Everything runs under no_grad on a small detached fixed batch.
+    The probe adds nothing to training. Its state is a plain dict on
+    wm.outer.__dict__, so it never enters the state dict, the optimizer or the
+    EMA buffers, and the CNN is deterministic given its weights, so caching the
+    reference features once at step 0 avoids retaining an encoder copy.
+    Everything runs under no_grad on a small detached fixed batch.
     """
     state = wm.outer.__dict__.setdefault("_echelon_instr", {})
-    # Robust default lookup: wm.config is an AttrDict (dict subclass) whose
-    # __getattr__ is dict.__getitem__, so a missing key raises KeyError - 
-    # which getattr(..., default) does NOT catch. Use dict .get for dicts.
+    # wm.config is an AttrDict whose __getattr__ is dict.__getitem__, so a
+    # missing key raises KeyError, which getattr(..., default) does not catch.
     cfg = wm.config
     period = int(cfg.get("echelon_instr_period", 250)) if isinstance(cfg, dict) \
         else int(getattr(cfg, "echelon_instr_period", 250))
@@ -99,8 +89,7 @@ def compute_world_model_losses(wm, inputs):
     # Encode observations: CNN -> spatial HRVQ -> stoch
     encoder_out = wm.encoder_network(states)
 
-    # Mechanism probe: encoder drift from this run's own step-0 state
-    # (log-only, throttled, no grad - see helper docstring).
+    # Encoder drift from this run's own step-0 state (log-only, throttled).
     _log_encoder_drift_from_init(wm, states)
 
     # Split: TSSM only sees "stoch", hrvq_info and pre_vq_features stay local
@@ -285,12 +274,10 @@ def compute_world_model_losses(wm, inputs):
     for level in range(num_levels):
         wm.add_info(f"vq_perplexity_l{level}", hrvq_info["perplexities"][level].item())
 
-    # Mechanism probes (log-only scalars, ~0 storage):
-    # (1) Per-level codebook usage fraction (unique codes / codebook size).
-    #     Complements the perplexity above; for trainable codebooks under a
-    #     trainable encoder this tracks how the active set drifts vs. source.
-    # (2) Per-level relative residual quant error ‖rₗ−z_qₗ‖²/‖rₗ‖²:
-    #     "is each level of the [1.0,0.5,0.1]-weighted hierarchy doing work?"
+    # Log-only probes: per-level codebook usage (unique codes over codebook
+    # size), which complements the perplexity above, and the per-level relative
+    # residual error ||r_l - z_q_l||^2 / ||r_l||^2, which shows how much work
+    # each level of the hierarchy does.
     usage_stats = wm.encoder_network.hrvq.get_codebook_usage(hrvq_info["indices"])
     for level in range(num_levels):
         wm.add_info(f"vq_usage_l{level}", usage_stats[f"usage_{level}"])

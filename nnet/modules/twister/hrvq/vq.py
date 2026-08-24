@@ -207,9 +207,8 @@ class HRVQ(nn.Module):
             "indices": [idx0, idx1, idx2] each (*,) LongTensor
             "vq_loss": scalar total commitment loss
             "perplexities": [perp0, perp1, perp2] per-level scalars
-            "residual_errors": [e0, e1, e2] per-level relative residual
-                quant error ‖rₗ−z_qₗ‖²/‖rₗ‖² (no-grad scalars, log-only;
-                "is each level explaining residual variance?")
+            "residual_errors": [e0, e1, e2] per-level relative residual error
+                ||r_l - z_q_l||^2 / ||r_l||^2 (no-grad scalars, log-only)
         """
         z_q_levels = []
         indices_all = []
@@ -221,8 +220,8 @@ class HRVQ(nn.Module):
         for level in range(self.num_levels):
             # Quantize the current residual
             z_q_st_level, indices_level, loss_level, perp_level = self.quantizers[level](residual)
-            # Raw z_q for this level (detached codebook lookup, NOT straight-through)
-            # We need the raw quantized vector for residual computation
+            # Raw codebook lookup, not straight-through: the residual below needs
+            # the undifferentiated quantized vector.
             z_q_raw = self.quantizers[level].embedding[indices_level]
             z_q_levels.append(z_q_raw)
             indices_all.append(indices_level)
