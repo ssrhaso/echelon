@@ -55,11 +55,10 @@ notes/
 experiments/isca_*manifest*.csv
 experiments/isca_pilot_*.csv
 
-# --- Vendored IRIS material not used by the port ---
-# Upstream's baseline-comparison notebook and its bundled score dumps.
-IRIS/results/
-# Cluster-specific environment build notes for one site.
-IRIS/launch_package/ENV_BUILD.md
+# --- Cross-architecture IRIS port (local only) ---
+# An exploratory port of the HRVQ tokenizer into IRIS. It is not part of the
+# paper and is kept out of the companion codebase.
+IRIS/
 
 # --- Paper (local only) ---
 # The repository is the companion codebase; the manuscript, its build products
@@ -84,11 +83,15 @@ REVISION_NOTES.md
 style_lint_report.txt
 
 # --- Internal planning / working notes (local only) ---
-IRIS/EXPERIMENT_PLAN.md
-IRIS/STAGE_REPORT.md
-IRIS/launch_package/ACCEPTANCE_CRITERIA.md
 experiments/CODEBOOK_STITCHING_*.md
 experiments/depth_ablation/
+
+# --- Codebook-stitching sweep (local only) ---
+# The stitching experiment did not survive verification and is not reported in
+# the paper, so its sweep definition and launchers are kept out of the repo.
+experiments/codebook_stitching.yaml
+experiments/isca_stitch.slurm
+experiments/setup_stitching.ps1
 
 # --- Local-only smoke test runner under nnet/modules/twister/fvq/ ---
 **/system_test.py
