@@ -13,11 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Spatial HRVQ Encoder: CNN -> spatial tokens -> shared 3-level HRVQ -> aggregate.
-
-The CNN stops before flattening to produce 16 spatial tokens of 256-dim each,
-applies shared HRVQ, then aggregates to (32, 32) stoch for TSSM compatibility.
-"""
+"""Spatial HRVQ encoder: the CNN emits 16 spatial tokens quantized by a shared HRVQ."""
 
 import torch.nn as nn
 
@@ -78,9 +74,8 @@ class SpatialHRVQEncoder(nn.Module):
             bias=cnn_norm is None
         )
 
-        # No pre_vq_proj: CNN outputs 256 channels = position_dim = embed_dim
-
-        # Shared 3-level HRVQ (256-dim per position)
+        # Shared HRVQ over the 256-dim positions. The CNN already outputs
+        # position_dim channels, so no projection is needed before it.
         self.hrvq = HRVQ(
             embed_dim=position_dim,
             num_codes=hrvq_num_codes,
@@ -90,7 +85,7 @@ class SpatialHRVQEncoder(nn.Module):
         )
 
     def forward_cnn(self, x):
-        """CNN feature extraction - STOP before flattening.
+        """CNN features, stopping before the flatten.
 
         Args:
             x: (B, L, C, H, W) or (B, C, H, W)
@@ -106,24 +101,24 @@ class SpatialHRVQEncoder(nn.Module):
         return x
 
     def forward(self, inputs):
-        """Full encoder: CNN -> spatial HRVQ -> stoch.
+        """CNN, then spatial HRVQ, then stoch.
 
         Args:
             inputs: (B, L, C, H, W) or (B, C, H, W)
         Returns dict:
-            "stoch": (*, 16, 256) z_q_spatial reshaped as stoch (identity reshape)
-            "hrvq_info": dict with spatial HRVQ outputs
+            "stoch": (*, 16, 256) z_q_spatial viewed as stoch
+            "hrvq_info": dict of spatial HRVQ outputs
             "pre_vq_features": (*, 4096) continuous features for contrastive
         """
-        # 1. CNN spatial features: (*, 16, 256)
+        # CNN spatial features: (*, 16, 256)
         spatial_features = self.forward_cnn(inputs)
 
-        # 2. Apply shared HRVQ to all 16 positions simultaneously
+        # Shared HRVQ over all 16 positions at once.
         batch_shape = spatial_features.shape[:-2]
         flat = spatial_features.reshape(-1, self.position_dim)  # (N*16, 256)
         hrvq_out = self.hrvq(flat)
 
-        # 3. Reshape HRVQ outputs back to spatial
+        # Back to spatial shape.
         z_q_spatial = hrvq_out["z_q"].reshape(batch_shape + (self.num_positions, self.position_dim))
         z_q_levels_spatial = [
             zq.reshape(batch_shape + (self.num_positions, self.position_dim))
@@ -134,10 +129,10 @@ class SpatialHRVQEncoder(nn.Module):
             for idx in hrvq_out["indices"]
         ]
 
-        # 4. stoch IS z_q_spatial - reshape is identity with stoch_size=16, discrete=256
+        # Identity reshape when stoch_size=16 and discrete=256.
         stoch = z_q_spatial.reshape(batch_shape + (self.stoch_size, self.discrete))
 
-        # 6. Pre-VQ features for contrastive (raw spatial, no aggregation)
+        # Pre-VQ features for the contrastive loss, unaggregated.
         pre_vq_flat = spatial_features.reshape(batch_shape + (self.num_positions * self.position_dim,))
 
         return {

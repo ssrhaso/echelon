@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Spatial HRVQ: VectorQuantizerEMA + multi-level residual HRVQ.
-
-VectorQuantizerEMA: single-level EMA codebook with dead-code revival.
-HRVQ: supports num_codes=[512,512,512] for 3-level residual quantization.
-"""
+"""EMA vector quantizer and the multi-level residual HRVQ built from it."""
 
 import torch
 import torch.nn as nn
@@ -58,18 +54,18 @@ class VectorQuantizerEMA(nn.Module):
         self.frozen = False
 
     def freeze(self):
-        """Freeze this codebook: disable EMA updates and commitment loss."""
+        """Disable EMA updates and commitment loss."""
         self.frozen = True
 
     def unfreeze(self):
-        """Unfreeze this codebook: re-enable EMA updates and commitment loss."""
+        """Re-enable EMA updates and commitment loss."""
         self.frozen = False
 
     def _ema_update(
         self, z_flat: torch.Tensor,
         indices: torch.Tensor
     ) -> None:
-        """Update Codebook Embeddings via EMA."""
+        """Update the codebook embeddings via EMA."""
         encodings = F.one_hot(indices, self.num_codes).float()
 
         cluster_size = encodings.sum(0)
@@ -92,7 +88,7 @@ class VectorQuantizerEMA(nn.Module):
         self,
         z_flat: torch.Tensor
     ) -> int:
-        """Replace Dead Codebook entries with random encoder outputs."""
+        """Replace dead codebook entries with random encoder outputs."""
         if self.update_count % self.revival_interval != 0:
             return 0
 
@@ -101,10 +97,8 @@ class VectorQuantizerEMA(nn.Module):
 
         if num_dead > 0:
             rand_indices = torch.randint(0, z_flat.shape[0], (num_dead,), device=z_flat.device)
-            # Cast to the codebook's dtype: under bf16 autocast z_flat is bf16 while
-            # the embedding buffer stays fp32, and masked index-assignment (index_put_)
-            # requires matching dtypes (unlike the in-place .add_() in _ema_update).
-            # No-op under fp32. Keeps persistent codebook state in full precision.
+            # Masked index-assignment needs matching dtypes, and the codebook
+            # buffer stays fp32 while z_flat may be bf16 under autocast.
             self.embedding[dead_mask] = z_flat[rand_indices].detach().to(self.embedding.dtype)
             self.ema_cluster_size[dead_mask] = self.revival_threshold
             self.ema_embedding_sum[dead_mask] = self.embedding[dead_mask] * self.revival_threshold
@@ -115,7 +109,7 @@ class VectorQuantizerEMA(nn.Module):
         self,
         z: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Quantize input tensor.
+        """Quantize z.
 
         Args:
             z: (*, embed_dim) continuous embeddings
@@ -160,16 +154,10 @@ class VectorQuantizerEMA(nn.Module):
 
 
 class HRVQ(nn.Module):
-    """Hierarchical Residual Vector Quantization.
+    """Hierarchical residual vector quantization.
 
-    Supports num_codes=[512] (single level, for ablation) and
-    num_codes=[512,512,512] (3 levels, full spatial HRVQ).
-
-    Residual chain:
-        L0 quantizes z_e              -> z_q0, residual0 = z_e - z_q0
-        L1 quantizes residual0        -> z_q1, residual1 = residual0 - z_q1
-        L2 quantizes residual1        -> z_q2
-        z_q = z_q0 + z_q1 + z_q2 (straight-through on the sum)
+    Level l quantizes the residual left by levels 0..l-1, and the output is the
+    sum over levels with straight-through gradients to z_e.
     """
 
     def __init__(
@@ -207,8 +195,7 @@ class HRVQ(nn.Module):
             "indices": [idx0, idx1, idx2] each (*,) LongTensor
             "vq_loss": scalar total commitment loss
             "perplexities": [perp0, perp1, perp2] per-level scalars
-            "residual_errors": [e0, e1, e2] per-level relative residual error
-                ||r_l - z_q_l||^2 / ||r_l||^2 (no-grad scalars, log-only)
+            "residual_errors": [e0, e1, e2] per-level ||r_l - z_q_l||^2 / ||r_l||^2
         """
         z_q_levels = []
         indices_all = []
@@ -218,30 +205,26 @@ class HRVQ(nn.Module):
 
         residual = z_e
         for level in range(self.num_levels):
-            # Quantize the current residual
             z_q_st_level, indices_level, loss_level, perp_level = self.quantizers[level](residual)
-            # Raw codebook lookup, not straight-through: the residual below needs
-            # the undifferentiated quantized vector.
+            # Raw lookup, not straight-through: the residual needs the
+            # undifferentiated quantized vector.
             z_q_raw = self.quantizers[level].embedding[indices_level]
             z_q_levels.append(z_q_raw)
             indices_all.append(indices_level)
             total_vq_loss = total_vq_loss + loss_level
             perplexities.append(perp_level)
 
-            # Per-level relative residual quant error (log-only diagnostic).
-            # Computed under no_grad on detached tensors - provably zero
-            # effect on the training graph. `residual` here is exactly the
-            # input to this level (before the subtraction below).
+            # Relative residual error at this level, log-only.
             with torch.no_grad():
                 num = (residual.detach() - z_q_raw.detach()).pow(2).sum(dim=-1)
                 den = residual.detach().pow(2).sum(dim=-1).clamp_min(1e-8)
                 residual_errors.append((num / den).mean())
 
-            # Compute residual for next level using raw z_q (detached from codebook)
+            # Residual passed to the next level.
             if level < self.num_levels - 1:
                 residual = residual - z_q_raw.detach()
 
-        # Straight-through on the SUM: gradient flows to z_e only
+        # Straight-through on the sum, so gradient flows to z_e only.
         z_q_sum = sum(zq.detach() for zq in z_q_levels)
         z_q_st = z_e + (z_q_sum - z_e).detach()
 
@@ -291,11 +274,11 @@ class HRVQ(nn.Module):
         return stats
 
     def freeze_levels(self, levels: list[int]):
-        """Freeze specified quantizer levels (disable EMA updates and commitment loss)."""
+        """Freeze the given levels."""
         for level in levels:
             assert 0 <= level < self.num_levels, f"Level {level} out of range [0, {self.num_levels})"
             self.quantizers[level].freeze()
 
     def get_frozen_levels(self) -> list[int]:
-        """Return list of frozen level indices."""
+        """Indices of the frozen levels."""
         return [i for i in range(self.num_levels) if self.quantizers[i].frozen]

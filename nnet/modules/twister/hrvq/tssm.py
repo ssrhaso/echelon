@@ -13,13 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Spatial HRVQ TSSM: transformer-based sequence model with spatial dynamics.
+"""Spatial HRVQ TSSM: a transformer sequence model with a spatial dynamics head.
 
-The TSSM transformer processes one aggregated token per timestep. Spatial
-structure exists only in the dynamics head: deter(512) is projected to 16
-spatial positions, each predicting 3-level codebook logits via a shared MLP.
-Codebook lookup plus residual sum produces stoch(16, 256), a parameter-free
-reshape from z_q_positions that preserves full spatial information.
+The transformer runs on one token per timestep. Spatial structure lives in the
+dynamics head, which projects deter to 16 positions and predicts per-level
+codebook logits for each; the codebook lookup and residual sum give stoch.
 """
 
 import torch
@@ -97,10 +95,10 @@ class SpatialHRVQTSSM(nn.Module):
         self.num_codes = num_codes
         self.spatial_proj_dim = spatial_proj_dim
 
-        # Reference to encoder's HRVQ (not a child module - no extra parameters)
+        # Reference to the encoder's HRVQ, not a child module.
         self.hrvq = hrvq
 
-        # zt + at -> Linear -> Norm -> Act -> Linear -> Norm -> et (unchanged)
+        # zt + at -> Linear -> Norm -> Act -> Linear -> Norm -> et
         self.action_mixer = modules.MultiLayerPerceptron(
             dim_input=self.stoch_size * self.discrete + self.num_actions if self.discrete else self.stoch_size + self.num_actions,
             dim_layers=[self.hidden_size, self.hidden_size],
@@ -111,7 +109,7 @@ class SpatialHRVQTSSM(nn.Module):
             bias=self.norm is None
         )
 
-        # Transformer et -> dt, ht (unchanged)
+        # Transformer et -> dt, ht
         self.transformer = modules.TransformerNetwork(
             dim_model=self.hidden_size,
             num_blocks=self.num_blocks,
@@ -148,8 +146,7 @@ class SpatialHRVQTSSM(nn.Module):
         # Learned position embeddings for the 4x4 grid
         self.position_embeddings = nn.Parameter(torch.randn(num_positions, 32))
 
-        # Shared MLP: per-position features -> per-level logits
-        # Input: spatial_proj_dim + 32 = 160, Output: sum(num_codes)
+        # Shared MLP: (spatial_proj_dim + 32) per-position features -> sum(num_codes) logits
         self.spatial_dynamics_mlp = nn.Sequential(
             nn.Linear(spatial_proj_dim + 32, 512),
             nn.SiLU(),
@@ -160,33 +157,33 @@ class SpatialHRVQTSSM(nn.Module):
             self.weight_init = nn.Parameter(torch.zeros(self.hidden_size))
 
     def _predict_spatial(self, deter, sample=True):
-        """Core spatial dynamics prediction.
+        """Spatial dynamics prediction.
 
         Args:
-            deter: (*, hidden_size) deterministic state from transformer
-            sample: if True, sample from Categorical; if False, argmax
+            deter: (*, hidden_size) deterministic state from the transformer
+            sample: sample from the Categorical, else argmax
         Returns:
-            stoch: (*, 32, 32) aggregated quantized spatial tokens, reshaped
+            stoch: (*, stoch_size, discrete) quantized spatial tokens
             all_logits: list of num_levels tensors, each (*, 16, num_codes[level])
             all_indices: list of num_levels LongTensors, each (*, 16)
         """
         batch_shape = deter.shape[:-1]
 
-        # 1. Project deter to per-position features: (*, 512) -> (*, 16, 128)
+        # Per-position features: (*, 512) -> (*, 16, 128)
         pos_features = self.spatial_proj(deter)
         pos_features = pos_features.reshape(batch_shape + (self.num_positions, self.spatial_proj_dim))
 
-        # 2. Add position embeddings: (*, 16, 128) cat (16, 32) -> (*, 16, 160)
+        # Position embeddings: (*, 16, 128) cat (16, 32) -> (*, 16, 160)
         pos_emb = self.position_embeddings.expand(batch_shape + (self.num_positions, 32))
         pos_input = torch.cat([pos_features, pos_emb], dim=-1)
 
-        # 3. Shared MLP: (*, 16, 160) -> (*, 16, sum(num_codes))
+        # Shared MLP: (*, 16, 160) -> (*, 16, sum(num_codes))
         logits_all = self.spatial_dynamics_mlp(pos_input)
 
-        # 4. Split logits per level
+        # Split logits per level.
         all_logits = list(torch.split(logits_all, self.num_codes, dim=-1))
 
-        # 5. Sample or argmax per level per position
+        # Sample or argmax per level per position.
         all_indices = []
         for level_logits in all_logits:
             if sample:
@@ -195,7 +192,7 @@ class SpatialHRVQTSSM(nn.Module):
                 indices = level_logits.argmax(dim=-1)
             all_indices.append(indices)
 
-        # 6. Codebook lookup + residual sum per position
+        # Codebook lookup and residual sum per position.
         z_q_positions = torch.zeros(
             batch_shape + (self.num_positions, self.position_dim),
             device=deter.device, dtype=deter.dtype
@@ -206,28 +203,18 @@ class SpatialHRVQTSSM(nn.Module):
             z_q_level = z_q_level.reshape(batch_shape + (self.num_positions, self.position_dim))
             z_q_positions = z_q_positions + z_q_level
 
-        # 7. stoch IS z_q_positions - reshape is identity with stoch_size=16, discrete=256
+        # Identity reshape when stoch_size=16 and discrete=256.
         stoch = z_q_positions.reshape(batch_shape + (self.stoch_size, self.discrete))
 
         return stoch, all_logits, all_indices
 
     def get_stoch(self, deter):
-        """Predict stochastic state from deterministic state (argmax).
-
-        Args:
-            deter: (*, hidden_size) deterministic state
-        Returns:
-            stoch: (*, stoch_size, discrete) = (*, 16, 256)
-        """
+        """Predict the stochastic state from deter by argmax."""
         stoch, _, _ = self._predict_spatial(deter, sample=False)
         return stoch
 
     def initial(self, batch_size=1, seq_length=1, dtype=torch.float32, device="cpu", detach_learned=False):
-        """Create initial state.
-
-        Returns:
-            AttrDict with stoch, deter, hidden, logits_l0, logits_l1, logits_l2
-        """
+        """Initial state: an AttrDict of stoch, deter, hidden and per-level logits."""
         initial_state = structs.AttrDict(
             stoch=torch.zeros(batch_size, seq_length, self.stoch_size, self.discrete, dtype=dtype, device=device),
             deter=torch.zeros(batch_size, seq_length, self.hidden_size, dtype=dtype, device=device),
@@ -253,7 +240,7 @@ class SpatialHRVQTSSM(nn.Module):
         return initial_state
 
     def observe(self, states, prev_actions, is_firsts, prev_state=None, is_firsts_hidden=None, return_blocks_deter=False):
-        """Run forward model on observation sequence."""
+        """Run the model over an observation sequence."""
 
         # Create prev_states (B, L-1, ...)
         prev_states = {key: value[:, :-1] for key, value in states.items()}
@@ -367,14 +354,14 @@ class SpatialHRVQTSSM(nn.Module):
         """Prior prediction with spatial dynamics.
 
         Args:
-            prev_states: dict with "stoch" (B, L, 32, 32), "deter" (B, L, 512), "hidden"
+            prev_states: dict of "stoch" (B, L, 16, 256), "deter" (B, L, 512), "hidden"
             prev_actions: (B, L, A)
             mask: attention mask
         Returns dict:
-            "stoch": (B, L, 32, 32)
+            "stoch": (B, L, 16, 256)
             "deter": (B, L, 512)
             "hidden": transformer hidden states
-            "logits_l0", "logits_l1", "logits_l2": each (B, L, 16, 512)
+            "logits_l{level}": each (B, L, 16, num_codes[level])
         """
         # Clip Action -c:+c
         if self.action_clip > 0.0:
@@ -386,10 +373,10 @@ class SpatialHRVQTSSM(nn.Module):
         else:
             stoch = prev_states["stoch"]
 
-        # MLP action mixer (unchanged)
+        # MLP action mixer
         x = self.action_mixer(torch.concat([stoch, prev_actions], dim=-1))
 
-        # Transformer (unchanged)
+        # Transformer
         assert self.get_hidden_len(prev_states["hidden"]) <= self.att_context_left, \
             "warning: att context left is {} and hidden has length {}".format(self.att_context_left, self.get_hidden_len(prev_states["hidden"]))
         outputs = self.transformer(x, hidden=prev_states["hidden"], mask=mask, return_hidden=True, return_att_w=return_att_w, return_blocks_x=return_blocks_deter)
@@ -414,11 +401,11 @@ class SpatialHRVQTSSM(nn.Module):
         return result
 
     def forward_obs(self, deter, hidden, states):
-        """Posterior: use encoder's quantized output as the true state."""
+        """Posterior: the encoder's quantized output is the state."""
         return {"deter": deter, "hidden": hidden, **states}
 
     def forward(self, states, prev_states, prev_actions, is_firsts, is_firsts_hidden=None, return_att_w=False, return_blocks_deter=False):
-        """Full forward pass: compute prior and posterior."""
+        """Prior and posterior for one sequence."""
         # (B, 1 or L, A)
         assert prev_actions.dim() == 3
         # (B, 1 or L)
@@ -459,7 +446,7 @@ class SpatialHRVQTSSM(nn.Module):
         # Forward Img (prior)
         prior = self.forward_img(prev_states, prev_actions, mask, return_att_w=return_att_w, return_blocks_deter=return_blocks_deter)
 
-        # Forward Obs (posterior - uses encoder's VQ stoch directly)
+        # Forward Obs (posterior, from the encoder's quantized stoch)
         post = self.forward_obs(prior["deter"], prior["hidden"], states)
         if return_att_w:
             post["att_w"] = prior["att_w"]
