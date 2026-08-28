@@ -107,20 +107,16 @@ class DecoderNetwork(nn.Module):
         return outputs
 
     def forward_cascade(self, z_q_levels: List[torch.Tensor], up_to_level: int = 2):
-        """ECHELON: Cascade reconstruction from partial sums of HRVQ levels.
+        """Reconstruct from the sum of z_q_levels[0:up_to_level+1].
 
-        Decodes using the sum of z_q_levels[0:up_to_level+1]. This enables
-        per-level reconstruction loss: L0 captures coarse structure, L0+L1 mid,
-        L0+L1+L2 full detail.
-
-        The existing decoder has feat_size = stoch_size * discrete = 1024.
-        Each z_q_level is 1024-dim, and their partial sums are also 1024-dim,
-        so forward_cnn handles them directly. No new parameters needed.
+        Partial sums keep the 1024-dim feature size the decoder already expects,
+        so no extra parameters are needed. The spatial tokenizer uses
+        spatial_cascade_decode in nnet/modules/twister/hrvq/decoder.py instead.
 
         Args:
-            z_q_levels: list of 3 tensors each (B, L, 1024) - per-level quantized vectors
-            up_to_level: int in {0, 1, 2} - decode using levels 0..up_to_level
+            z_q_levels: per-level quantized vectors, each (B, L, 1024)
+            up_to_level: decode using levels 0..up_to_level
         Returns:
-            obs_dist: MSEDist over (B, L, 3, 64, 64) - reconstruction distribution
+            obs_dist: MSEDist over (B, L, 3, 64, 64)
         """
-        raise NotImplementedError("ECHELON: cascade reconstruction - sum z_q_levels[0:up_to_level+1] then forward_cnn")
+        raise NotImplementedError("flat cascade reconstruction is unimplemented; use spatial_cascade_decode")

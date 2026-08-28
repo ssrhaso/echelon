@@ -75,16 +75,14 @@ def main(args):
 
         freeze_levels = [int(x) for x in args.freeze_levels.split(",")] if args.freeze_levels else []
 
-        # Cross-transfer: load checkpoint once, pass state dict to both functions
+        # Load the source checkpoint once and share the state dict
         if args.transfer_checkpoint is not None:
             source_state = _load_source_state(model, args.transfer_checkpoint)
 
             if args.transfer_all:
-                # Whole-model transfer: the encoder, codebooks, world model,
-                # decoder and the reward, value and continue heads all warm-start
-                # from the source, and only the action-conditioned modules are
-                # re-initialised. The encoder arrives here, so the codebook-only
-                # path is skipped.
+                # Whole-model transfer warm-starts every task-agnostic weight
+                # and re-initialises only the action-conditioned modules. It
+                # carries the encoder, so the codebook-only path is skipped.
                 summary = load_and_transfer_all(model, args.transfer_checkpoint, source_state)
                 print_transfer_provenance(summary, args.transfer_checkpoint)
             else:
@@ -105,9 +103,8 @@ def main(args):
             model.encoder_network.hrvq.freeze_levels(freeze_levels)
             print(f"Frozen VQ levels: {freeze_levels}")
 
-        # Freeze encoder CNN. The _frozen flag is what makes this stick: train_step
-        # re-enables grads on whole networks every step, so a bare
-        # requires_grad_(False) here would be reverted after the first step.
+        # Freeze the encoder CNN. train_step re-enables grads on whole networks
+        # every step, so the _frozen flag, not requires_grad_, is what holds.
         if args.freeze_encoder:
             for p in model.encoder_network.cnn.parameters():
                 p._frozen = True
@@ -220,8 +217,7 @@ if __name__ == "__main__":
     # Parse Args
     args = parser.parse_args()
 
-    # Fail-fast validation: catch bad CLI args at startup instead of crashing
-    # cryptically minutes into a multi-hour fleet run.
+    # Validate the arguments at startup rather than failing part-way into a run
     if args.transfer_checkpoint is not None and not os.path.isfile(args.transfer_checkpoint):
         parser.error(
             "--transfer_checkpoint path does not exist: {}".format(args.transfer_checkpoint)

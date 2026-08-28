@@ -171,7 +171,7 @@ class TWISTER(models.Model):
         self.config.module_pre_norm = False
         self.config.detach_decoder = False
 
-        # ECHELON: Spatial HRVQ config
+        # Spatial HRVQ config
         self.config.hrvq_num_codes = [512, 512, 512]
         self.config.hrvq_commitment_costs = [0.25, 0.5, 1.0]
         self.config.hrvq_ema_decay = 0.99
@@ -230,7 +230,7 @@ class TWISTER(models.Model):
 
         # Networks
         feat_size = self.config.model_stoch_size * self.config.model_discrete + self.config.model_hidden_size if self.config.model_discrete else self.config.model_stoch_size + self.config.model_hidden_size
-        # ECHELON: Spatial HRVQ encoder
+        # Spatial HRVQ encoder
         self.encoder_network = SpatialHRVQEncoder(
             dim_input_cnn=self.config.image_channels,
             dim_cnn=self.config.dim_cnn,
@@ -249,8 +249,8 @@ class TWISTER(models.Model):
             dim_cnn=self.config.dim_cnn, 
             cnn_norm=self.config.norm,
         )
-        # ECHELON: Spatial HRVQ TSSM with spatial dynamics head
-        # NOTE: hrvq is NOT a child module of TSSM - just a reference. Owned by encoder.
+        # Spatial HRVQ TSSM. hrvq is passed by reference rather than as a
+        # child module, so the encoder stays its only owner.
         self.rssm = SpatialHRVQTSSM(
             num_actions=self.env.num_actions,
             stoch_size=self.config.model_stoch_size,
@@ -553,7 +553,7 @@ class TWISTER(models.Model):
 
             # Repr State (B, ...)
             encoder_out = self.encoder_network(self.preprocess_inputs(state, time_stacked=False))
-            # ECHELON: filter - TSSM only sees "stoch", hrvq_info stays local
+            # The TSSM takes only "stoch"; hrvq_info stays local
             latent = {"stoch": encoder_out["stoch"]}
 
             # Unsqueeze Time dim (B, 1, ...)
@@ -1081,7 +1081,7 @@ class TWISTER(models.Model):
 
                 # Repr State (1, ...)
                 encoder_out = self.encoder_network(self.preprocess_inputs(state.unsqueeze(dim=0), time_stacked=False))
-                # ECHELON: filter - TSSM only sees "stoch", hrvq_info stays local
+                # The TSSM takes only "stoch"; hrvq_info stays local
                 latent = {"stoch": encoder_out["stoch"]}
 
                 # Unsqueeze Time dim (B, 1, ...)
@@ -1160,7 +1160,7 @@ class TWISTER(models.Model):
 
             # Forward Representation Network (B, L, D)
             encoder_out = self.encoder_network(states)
-            # ECHELON: filter - TSSM only sees "stoch"
+            # The TSSM takes only "stoch"
             latent = {"stoch": encoder_out["stoch"]}
 
             ###############################################################################
@@ -1176,7 +1176,7 @@ class TWISTER(models.Model):
                 is_firsts_hidden=None,
             )
 
-            # ECHELON: inject per-level logits for imagine() compatibility
+            # Carry the per-level logits over for imagine()
             for _lvl in range(len(self.config.hrvq_num_codes)):
                 posts[f"logits_l{_lvl}"] = priors[f"logits_l{_lvl}"]
 
@@ -1198,7 +1198,7 @@ class TWISTER(models.Model):
 
             # Forward
             posts_con_out = self.encoder_network(states_aug_con)
-            # ECHELON: use pre_vq_features for contrastive embed (continuous, not post-VQ)
+            # The contrastive embedding uses the continuous pre-VQ features
             con_embed = posts_con_out["pre_vq_features"]  # (B, L, 1024)
 
             contrastive_sorted_indices = []
