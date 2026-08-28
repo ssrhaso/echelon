@@ -13,12 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Step 1: EncoderNetwork with single-level VQ.
-
-- hrvq_num_codes=[512] (single level instead of [512, 512, 512])
-- hrvq_commitment_costs=[0.25] (single level)
-- forward() implemented: CNN -> pre_vq_proj -> HRVQ -> reshape to (32, 32)
-"""
+"""Encoder whose tokenizer is a single 512-code VQ level."""
 
 import torch.nn as nn
 
@@ -85,7 +80,7 @@ class EncoderNetwork(nn.Module):
             bias_init=dist_bias_init,
         )
 
-        # Single-level HRVQ (512 codes, 1024-dim)
+        # Single VQ level over the projected features
         self.hrvq = HRVQ(
             embed_dim=embed_dim,
             num_codes=hrvq_num_codes,
@@ -95,7 +90,7 @@ class EncoderNetwork(nn.Module):
         )
 
     def forward_cnn(self, x):
-        """CNN feature extraction. Unchanged from TWISTER """
+        """CNN features, flattened to (*, 4096)."""
         shape = x.shape
         x = x.reshape((-1,) + shape[-3:])
         x = self.cnn(x)
@@ -103,7 +98,7 @@ class EncoderNetwork(nn.Module):
         return x
 
     def forward(self, inputs):
-        """CNN -> pre_vq_proj -> single VQ -> reshaped stoch """
+        """CNN, then projection, then VQ, reshaped to stoch."""
         cnn_out  = self.forward_cnn(inputs)
         z_e      = self.pre_vq_proj(cnn_out)
         hrvq_out = self.hrvq(z_e)

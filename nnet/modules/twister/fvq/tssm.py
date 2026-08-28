@@ -13,22 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Step 1: TSSM with single VQ dynamics head.
+"""TSSM whose dynamics head predicts one flat codebook index per timestep.
 
-Drop-in replacement for nnet/modules/twister/tssm.py
-
-Changes from vanilla TWISTER TSSM:
-- dynamics_predictor: Linear(hidden_size -> num_codes) = Linear(512 -> 512)
-  Predicts logits over a single codebook, NOT 32x32 categorical logits.
-- forward_img: sample codebook index -> lookup -> reshape to (32, 32)
-- get_stoch: same change - codebook lookup instead of OneHotDist
-- get_dist: removed (no logit-based distribution in VQ)
-- No cascade, no conditioning, no per-level heads - just one head.
-- Stores reference to encoder's HRVQ for codebook lookups during imagination.
-
-Constructor adds:
-    num_codes: list[int] = [512] - codebook size (single level)
-    hrvq: HRVQ reference - for codebook embedding access
+The head is a Linear over the 512 codes rather than 32x32 categorical logits,
+and the state comes from a codebook lookup instead of a OneHotDist sample.
 """
 
 import torch
@@ -51,7 +39,7 @@ class TSSM(nn.Module):
             weight_init="dreamerv3_normal",
             bias_init="zeros",
             norm={"class": "LayerNorm", "params": {"eps": 1e-3}},
-            uniform_mix=0.01,       # kept in signature for compat, unused
+            uniform_mix=0.01,       # unused, kept for interface compatibility
             action_clip=1.0,
             dist_weight_init="xavier_uniform",
             dist_bias_init="zeros",
@@ -65,7 +53,7 @@ class TSSM(nn.Module):
             att_context_left=64,
             module_pre_norm=False,
 
-            # Step 1: VQ dynamics
+            # VQ dynamics
             num_codes: list = None,
             hrvq=None,
             cond_proj_dim=None,     # unused in step 1, kept for signature compat
@@ -95,18 +83,17 @@ class TSSM(nn.Module):
         self.att_context_left = att_context_left
         self.max_pos_encoding = 2048
 
-        # Step 1: VQ params
+        # VQ params
         if num_codes is None:
             num_codes = [512]
-        assert len(num_codes) == 1, "Step 1: single codebook only"
+        assert len(num_codes) == 1, "flat VQ has a single codebook"
         self.num_codes_flat = num_codes[0]
 
-        # Reference to encoder's HRVQ (not a child module - no extra parameters)
-        # Used for codebook lookup during forward_img and imagination
+        # Reference to the encoder's HRVQ, not a child module. Used for the
+        # codebook lookups in forward_img and imagination.
         self.hrvq = hrvq
 
         # zt + at -> Linear -> Norm -> Act -> Linear -> Norm -> et
-        # (unchanged from TWISTER)
         self.action_mixer = modules.MultiLayerPerceptron(
             dim_input=self.stoch_size * self.discrete + self.num_actions if self.discrete else self.stoch_size + self.num_actions,
             dim_layers=[self.hidden_size, self.hidden_size],
@@ -117,7 +104,7 @@ class TSSM(nn.Module):
             bias=self.norm is None
         )
 
-        # Transformer et -> dt, ht  (unchanged from TWISTER)
+        # Transformer et -> dt, ht
         self.transformer = modules.TransformerNetwork(
             dim_model=self.hidden_size,
             num_blocks=self.num_blocks,
@@ -143,10 +130,7 @@ class TSSM(nn.Module):
             module_pre_norm=module_pre_norm
         )
 
-        # ---- CHANGED from TWISTER ----
-        # Dynamics predictor: dt -> logits over codebook (512 logits, not 1024)
-        # In vanilla TWISTER: Linear(hidden_size -> stoch_size * discrete) = Linear(512 -> 1024)
-        # In step 1:          Linear(hidden_size -> num_codes) = Linear(512 -> 512)
+        # Dynamics predictor: dt -> one logit per code
         self.dynamics_predictor = modules.Linear(
             in_features=self.hidden_size,
             out_features=self.num_codes_flat,
@@ -158,26 +142,20 @@ class TSSM(nn.Module):
             self.weight_init = nn.Parameter(torch.zeros(self.hidden_size))
 
     def get_stoch(self, deter):
-        """Predict stochastic state from deterministic state.
-
-        Changed from TWISTER: predicts codebook index -> lookup -> reshape.
-        Used by initial() to create learned initial state.
+        """Predict the stochastic state from deter by argmax over the codebook.
 
         Args:
             deter: (*, hidden_size) deterministic state
         Returns:
-            stoch: (*, stoch_size, discrete) = (*, 32, 32)
+            stoch: (*, stoch_size, discrete)
         """
-        # Logits over codebook
         logits = self.dynamics_predictor(deter)  # (*, 512)
 
-        # Take mode (argmax) for initial state
+        # Mode of the code distribution
         index = logits.argmax(dim=-1)  # (*,)
 
-        # Codebook lookup
+        # Codebook lookup, then the TSSM stoch shape
         z_q = self.hrvq.quantizers[0].embedding[index]  # (*, 1024)
-
-        # Reshape to TSSM stoch shape
         stoch = z_q.reshape(deter.shape[:-1] + (self.stoch_size, self.discrete))
 
         return stoch
@@ -204,7 +182,7 @@ class TSSM(nn.Module):
         return initial_state
 
     def observe(self, states, prev_actions, is_firsts, prev_state=None, is_firsts_hidden=None, return_blocks_deter=False):
-        """Unchanged from TWISTER. Runs forward model on observation sequence."""
+        """Run the model over an observation sequence."""
 
         # Create prev_states (B, L-1, ...)
         prev_states = {key: value[:, :-1] for key, value in states.items()}
@@ -225,7 +203,7 @@ class TSSM(nn.Module):
         return posts, priors
 
     def imagine(self, p_net, prev_state, img_steps=1, is_firsts=None, is_firsts_hidden=None, actions=None):
-        """Unchanged from TWISTER except stoch comes from codebook lookup."""
+        """Imagine a rollout, with stoch coming from the codebook lookup."""
 
         # Policy
         policy = lambda s: p_net(self.get_feat(s).detach()).rsample()
@@ -292,38 +270,36 @@ class TSSM(nn.Module):
         return img_states
 
     def get_feat(self, state, blocks_deter_id=None):
-        """Unchanged from TWISTER. Concatenate stoch (flat 1024) + deter (512) = 1536."""
+        """Concatenate flattened stoch and deter."""
         return torch.cat([state["stoch"].flatten(start_dim=-2, end_dim=-1), state["deter"] if blocks_deter_id is None else state["blocks_deter"][blocks_deter_id]], dim=-1)
 
     def slice_hidden(self, hidden):
-        """Unchanged from TWISTER."""
+        """Keep the last att_context_left steps of the transformer hidden state."""
         hidden = [(hidden_blk[0][:, -self.att_context_left:], hidden_blk[1][:, -self.att_context_left:]) for hidden_blk in hidden]
         return hidden
 
     def get_hidden_len(self, hidden):
-        """Unchanged from TWISTER."""
+        """Length of the transformer hidden state, zero when there is none."""
         if hidden is not None:
             return hidden[0][0].shape[1]
         else:
             return 0
 
     def forward_img(self, prev_states, prev_actions, mask, return_att_w=False, return_blocks_deter=False):
-        """Prior prediction: given previous state + action, predict next state.
+        """Prior prediction: from the previous state and action, predict the next.
 
-        Changed from TWISTER:
- - Dynamics predictor outputs 512 logits (codebook) instead of 1024 (32x32)
- - Samples codebook index via Categorical, then looks up embedding
- - No OneHotDist - VQ is a hard discrete bottleneck
+        A codebook index is sampled from the predicted logits and looked up, so
+        there is no OneHotDist: the VQ is a hard discrete bottleneck.
 
         Args:
-            prev_states: dict with "stoch" (B, L, 32, 32), "deter" (B, L, 512), "hidden"
+            prev_states: dict of "stoch" (B, L, 32, 32), "deter" (B, L, 512), "hidden"
             prev_actions: (B, L, A)
             mask: attention mask
         Returns dict:
-            "stoch": (B, L, 32, 32) - codebook vector reshaped
+            "stoch": (B, L, 32, 32) reshaped codebook vector
             "deter": (B, L, 512)
             "hidden": transformer hidden states
-            "logits": (B, L, 512) - logits over codebook (for CE loss)
+            "logits": (B, L, 512) over the codebook, for the CE loss
         """
         # Clip Action -c:+c
         if self.action_clip > 0.0:
@@ -335,10 +311,10 @@ class TSSM(nn.Module):
         else:
             stoch = prev_states["stoch"]
 
-        # MLP action mixer (unchanged)
+        # MLP action mixer
         x = self.action_mixer(torch.concat([stoch, prev_actions], dim=-1))
 
-        # Transformer (unchanged)
+        # Transformer
         assert self.get_hidden_len(prev_states["hidden"]) <= self.att_context_left, \
             "warning: att context left is {} and hidden has length {}".format(self.att_context_left, self.get_hidden_len(prev_states["hidden"]))
         outputs = self.transformer(x, hidden=prev_states["hidden"], mask=mask, return_hidden=True, return_att_w=return_att_w, return_blocks_x=return_blocks_deter)
@@ -351,35 +327,23 @@ class TSSM(nn.Module):
         if return_blocks_deter:
             add_out_dict["blocks_deter"] = outputs.blocks_x
 
-        # ---- CHANGED from TWISTER ----
-        # Predict logits over codebook (512 logits, not 32x32)
+        # Logits over the codebook
         logits = self.dynamics_predictor(deter)  # (B, L, 512)
 
-        # Sample codebook index
+        # Sample an index, look it up, and take the TSSM stoch shape
         index = torch.distributions.Categorical(logits=logits).sample()  # (B, L)
-
-        # Look up in codebook -> 1024-dim vector
         z_q = self.hrvq.quantizers[0].embedding[index]  # (B, L, 1024)
-
-        # Reshape to TSSM stoch shape: (B, L, 32, 32)
         stoch = z_q.reshape(deter.shape[:-1] + (self.stoch_size, self.discrete))
 
         # Return Prior
         return {"stoch": stoch, "deter": deter, "hidden": hidden, "logits": logits, **add_out_dict}
 
     def forward_obs(self, deter, hidden, states):
-        """Posterior: use encoder's quantized output as the true state.
-
-        Unchanged from TWISTER - the encoder already produced "stoch" via VQ.
-        """
+        """Posterior: the encoder's quantized output is the state."""
         return {"deter": deter, "hidden": hidden, **states}
 
     def forward(self, states, prev_states, prev_actions, is_firsts, is_firsts_hidden=None, return_att_w=False, return_blocks_deter=False):
-        """Full forward pass: compute prior and posterior.
-
-        Mostly unchanged from TWISTER. The only difference is that forward_img
-        now uses codebook lookup instead of OneHotDist sampling.
-        """
+        """Prior and posterior for one sequence."""
         # (B, 1 or L, A)
         assert prev_actions.dim() == 3
         # (B, 1 or L)
@@ -420,7 +384,7 @@ class TSSM(nn.Module):
         # Forward Img (prior)
         prior = self.forward_img(prev_states, prev_actions, mask, return_att_w=return_att_w, return_blocks_deter=return_blocks_deter)
 
-        # Forward Obs (posterior - uses encoder's VQ stoch directly)
+        # Forward Obs (posterior, from the encoder's quantized stoch)
         post = self.forward_obs(prior["deter"], prior["hidden"], states)
         if return_att_w:
             post["att_w"] = prior["att_w"]
