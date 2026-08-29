@@ -26,7 +26,6 @@ import torch
 import functions
 
 # Other
-import os
 import random
 import numpy as np
 import argparse
@@ -80,9 +79,8 @@ def main(args):
             source_state = _load_source_state(model, args.transfer_checkpoint)
 
             if args.transfer_all:
-                # Whole-model transfer warm-starts every task-agnostic weight
-                # and re-initialises only the action-conditioned modules. It
-                # carries the encoder, so the codebook-only path is skipped.
+                # Whole-model transfer carries the encoder, so the codebook-only
+                # path below is skipped.
                 summary = load_and_transfer_all(model, args.transfer_checkpoint, source_state)
                 print_transfer_provenance(summary, args.transfer_checkpoint)
             else:
@@ -103,8 +101,8 @@ def main(args):
             model.encoder_network.hrvq.freeze_levels(freeze_levels)
             print(f"Frozen VQ levels: {freeze_levels}")
 
-        # Freeze the encoder CNN. train_step re-enables grads on whole networks
-        # every step, so the _frozen flag, not requires_grad_, is what holds.
+        # Freeze the encoder CNN. requires_grad_ alone would not hold: the
+        # _frozen flag is what survives the per-step regrad in set_require_grad.
         if args.freeze_encoder:
             for p in model.encoder_network.cnn.parameters():
                 p._frozen = True
@@ -178,7 +176,7 @@ if __name__ == "__main__":
     # Args
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config_file",          type=str,   default="configs/echelon.py",                                       help="Python configuration file containing model hyperparameters")
-    parser.add_argument("-m", "--mode",                 type=str,   default="training", choices=["training", "evaluation", "pass"],     help="Mode: training, validation-clean, test-clean, eval_time-dev-clean, ...")
+    parser.add_argument("-m", "--mode",                 type=str,   default="training", choices=["training", "evaluation", "pass"],     help="Run mode")
     parser.add_argument("-i", "--checkpoint",           type=str,   default=None,                                                       help="Load model from checkpoint name")
     parser.add_argument("--cpu",                        action="store_true",                                                            help="Load model on cpu")
     parser.add_argument("--load_last",                  action="store_true",                                                            help="Load last model checkpoint")

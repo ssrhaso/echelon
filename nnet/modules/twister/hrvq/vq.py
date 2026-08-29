@@ -125,7 +125,7 @@ class VectorQuantizerEMA(nn.Module):
         with torch.no_grad():
             distances = (
                 z_flat.pow(2).sum(dim=1, keepdim=True)
- - 2 * z_flat @ self.embedding.T
+                - 2 * z_flat @ self.embedding.T
                 + self.embedding.pow(2).sum(1, keepdim=True).T
             )
 

@@ -392,7 +392,6 @@ class SpatialHRVQTSSM(nn.Module):
         # Spatial dynamics prediction
         stoch, all_logits, all_indices = self._predict_spatial(deter, sample=True)
 
-        # Build return dict
         result = {"stoch": stoch, "deter": deter, "hidden": hidden}
         for level in range(self.num_levels):
             result[f"logits_l{level}"] = all_logits[level]

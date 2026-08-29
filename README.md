@@ -62,6 +62,8 @@ Hyperparameters can be overridden per run:
 env_name=atari100k-alien run_name=atari100k override_config='{"num_envs": 4, "epochs": 100}' python3 main.py
 ```
 
+`python3 main.py --help` lists every command-line flag with its default.
+
 `precision` accepts `float32` (the atari100k default), `float16` or `bfloat16`.
 On 8GB GPUs prefer `bfloat16`: it engages Ampere tensor cores for a large
 speedup and, unlike `float16`, its fp32-range exponent avoids the HRVQ
@@ -120,45 +122,6 @@ transfer sweep and [experiments/isca_scratch.slurm](experiments/isca_scratch.slu
 the from-scratch baselines. Each array task of the transfer job maps to one row
 of a run manifest CSV, one (game, condition, seed) cell per row, expanded from
 the sweep definition.
-
-## Script Options
-
-```
-# Args
--c / --config_file           type=str   default="configs/echelon.py"    help="Python configuration file containing model hyperparameters"
--m / --mode                  type=str   default="training"              help="Mode: training, evaluation, pass"
--i / --checkpoint            type=str   default=None                    help="Load model from checkpoint name"
---cpu                        action="store_true"                        help="Load model on cpu"
---load_last                  action="store_true"                        help="Load last model checkpoint"
---wandb                      action="store_true"                        help="Initialize wandb logging"
---verbose_progress_bar       type=int   default=1                       help="Verbose level of progress bar display"
-
-# Training
---saving_period_epoch        type=int   default=1                       help="Model saving every n epochs"
---log_figure_period_step     type=int   default=None                    help="Log figure every n steps"
---log_figure_period_epoch    type=int   default=1                       help="Log figure every n epochs"
---step_log_period            type=int   default=100                     help="Training step log period"
---keep_last_k                type=int   default=3                       help="Keep last k checkpoints"
-
-# Eval
---eval_period_epoch          type=int   default=1                       help="Model evaluation every n epochs"
---eval_period_step           type=int   default=None                    help="Model evaluation every n steps"
-
-# Transfer
---seed                       type=int   default=None                    help="Global random seed"
---transfer_checkpoint        type=str   default=None                    help="Source checkpoint for codebook transfer"
---freeze_levels              type=str   default=None                    help="Comma-separated HRVQ levels to pin, e.g. '0,1'"
---init_encoder               action="store_true"                        help="Source-initialise the encoder CNN, still trainable"
---freeze_encoder             action="store_true"                        help="Source-initialise the encoder CNN and hold it fixed"
---transfer_all               action="store_true"                        help="Warm-start every weight the two games share"
-
-# Info
---show_dict                  action="store_true"                        help="Show model dict summary"
---show_modules               action="store_true"                        help="Show model named modules"
-
-# Debug
---detect_anomaly             action="store_true"                        help="Enable or disable the autograd anomaly detection"
-```
 
 ## Citation
 

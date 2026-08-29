@@ -381,8 +381,6 @@ class TWISTER(models.Model):
 
         # Log best checkpoint to W&B and remove local file
         if wandb.run is not None:
-            # Durable per-run collection, never the shared rolling one (see the
-            # checkpoint_artifact_name docstring).
             artifact_name = checkpoint_artifact_name()
             artifact = wandb.Artifact(
                 name=artifact_name,
@@ -829,12 +827,7 @@ class TWISTER(models.Model):
             return getattr(self.outer, name)
 
         def forward(self, inputs):
-            """ECHELON WorldModel forward pass - spatial HRVQ.
-
-            Delegates to compute_world_model_losses() in hrvq/losses.py.
-            Implements cascade reconstruction, per-level CE, VQ commitment,
-            contrastive with pre-VQ features, and hidden state flattening.
-            """
+            """Spatial HRVQ world model losses; see hrvq/losses.py."""
             return compute_world_model_losses(self, inputs)
         
     class ActorModel(models.Model):

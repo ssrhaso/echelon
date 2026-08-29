@@ -35,9 +35,8 @@ from nnet.optimizers import optim_dict
 def metric_key(*parts):
     """Join metric-name parts with an explicit forward slash.
 
-    These names become W&B history keys via `sync_tensorboard=True`. The separator
-    must never depend on the host OS (`os.path.join` split the same metric into
-    `\\`-keys on Windows and `/`-keys on Linux, silently orphaning cloud runs).
+    These names become W&B history keys via `sync_tensorboard=True`, so the
+    separator must not depend on the host OS the way `os.path.join` does.
     """
     return "/".join(str(p) for p in parts if p is not None and str(p) != "")
 

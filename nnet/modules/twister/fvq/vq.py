@@ -41,7 +41,6 @@ class VectorQuantizerEMA(nn.Module):
         self.revival_threshold = revival_threshold
         
         # Codebook Embeddings : (K, D)
-        # Initialise from uniform (VQ-VAE paper)
         embedding = torch.randn(num_codes, embed_dim)
         self.register_buffer('embedding', embedding)
 
@@ -56,7 +55,6 @@ class VectorQuantizerEMA(nn.Module):
     ) -> None:
         """Update the codebook embeddings via EMA."""
 
-        # One-hot assignments (N, K)
         encodings = F.one_hot(indices, self.num_codes).float()
         
         # Per-code count and embedding sum over this batch
@@ -76,11 +74,8 @@ class VectorQuantizerEMA(nn.Module):
 
         # Update codebook
         self.embedding.copy_(self.ema_embedding_sum / cluster_size_smoothed.unsqueeze(1))
-        
-        # Increment counter
+
         self.update_count += 1
-        
-        pass
 
     def _revive_dead_codes(
         self, 
@@ -116,11 +111,10 @@ class VectorQuantizerEMA(nn.Module):
         with torch.no_grad():
             distances = (
                 z_flat.pow(2).sum(dim=1, keepdim=True)
- - 2 * z_flat @ self.embedding.T
+                - 2 * z_flat @ self.embedding.T
                 + self.embedding.pow(2).sum(1, keepdim=True).T
             )  # (N, K)
 
-            # Nearest codebook entry
             indices = distances.argmin(dim=1)   # (N,)
             z_q = self.embedding[indices]       # (N, D)
 
@@ -143,10 +137,8 @@ class VectorQuantizerEMA(nn.Module):
         # Back to the original batch dims
         z_q_st = z_q_st.reshape(shape)
         indices = indices.reshape(shape[:-1])
-        
-        return z_q_st, indices, commitment_loss, perplexity
 
-        pass
+        return z_q_st, indices, commitment_loss, perplexity
 
 
 class HRVQ(nn.Module):
@@ -191,7 +183,6 @@ class HRVQ(nn.Module):
             "perplexities": [perplexity],
         }
 
-    # Encode and decode utilities for evaluation and inference
     @torch.no_grad()
     def encode(
         self, 

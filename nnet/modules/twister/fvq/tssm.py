@@ -335,7 +335,6 @@ class TSSM(nn.Module):
         z_q = self.hrvq.quantizers[0].embedding[index]  # (B, L, 1024)
         stoch = z_q.reshape(deter.shape[:-1] + (self.stoch_size, self.discrete))
 
-        # Return Prior
         return {"stoch": stoch, "deter": deter, "hidden": hidden, "logits": logits, **add_out_dict}
 
     def forward_obs(self, deter, hidden, states):
@@ -391,5 +390,4 @@ class TSSM(nn.Module):
         if return_blocks_deter:
             post["blocks_deter"] = prior["blocks_deter"]
 
-        # Return post and prior
         return post, prior

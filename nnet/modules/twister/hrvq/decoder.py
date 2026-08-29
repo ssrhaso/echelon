@@ -36,16 +36,13 @@ def spatial_cascade_decode(decoder_network, z_q_levels_spatial, up_to_level, dim
     for level in range(1, up_to_level + 1):
         z_q_partial = z_q_partial + z_q_levels_spatial[level]
 
-    # (*, 16, 256) -> (N, 4, 4, 256) -> (N, 256, 4, 4)
-    shape = z_q_partial.shape  # (*, 16, 256)
-    batch_shape = shape[:-2]
-    x = z_q_partial.reshape(-1, 16, 8 * dim_cnn)     # (N, 16, 256)
-    x = x.reshape(-1, 4, 4, 8 * dim_cnn)              # (N, 4, 4, 256)
-    x = x.permute(0, 3, 1, 2)                          # (N, 256, 4, 4)
+    # Back to the (256, 4, 4) grid the transposed CNN expects.
+    batch_shape = z_q_partial.shape[:-2]
+    x = z_q_partial.reshape(-1, 4, 4, 8 * dim_cnn)   # (N, 4, 4, 256)
+    x = x.permute(0, 3, 1, 2)                        # (N, 256, 4, 4)
 
     # Transposed CNN, skipping the decoder's input projection.
-    x = decoder_network.cnn(x)                          # (N, 3, 64, 64)
-
-    x = x.reshape(batch_shape + x.shape[1:])            # (*, 3, 64, 64)
+    x = decoder_network.cnn(x)                       # (N, 3, 64, 64)
+    x = x.reshape(batch_shape + x.shape[1:])         # (*, 3, 64, 64)
 
     return distributions.MSEDist(x, reinterpreted_batch_ndims=3)

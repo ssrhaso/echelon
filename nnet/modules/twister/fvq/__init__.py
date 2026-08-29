@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Original flat-VQ tokenizer kept as the ablation baseline for ECHELON.
+"""Flat-VQ tokenizer, the ablation baseline for ECHELON.
 
-The active ECHELON training path uses nnet/modules/twister/hrvq/ instead.
-This package is retained so flat-VQ comparisons can be re-run from source.
+The active training path uses nnet/modules/twister/hrvq/ instead.
 """
 
 from .vq import VectorQuantizerEMA

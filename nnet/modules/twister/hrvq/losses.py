@@ -30,11 +30,9 @@ def _log_encoder_drift_from_init(wm, states):
     the measure is comparable across freeze conditions: a frozen encoder holds
     drift at zero while a trainable one grows away from its initialisation.
 
-    The probe adds nothing to training. Its state is a plain dict on
-    wm.outer.__dict__, so it never enters the state dict, the optimizer or the
-    EMA buffers, and the CNN is deterministic given its weights, so caching the
-    reference features once at step 0 avoids retaining an encoder copy.
-    Everything runs under no_grad on a small detached fixed batch.
+    Log-only: the probe state is a plain dict on wm.outer.__dict__, so it never
+    enters the state dict, the optimizer or the EMA buffers, and everything runs
+    under no_grad on a small detached fixed batch.
     """
     state = wm.outer.__dict__.setdefault("_echelon_instr", {})
     # wm.config is an AttrDict whose __getattr__ is dict.__getitem__, so a
@@ -65,28 +63,26 @@ def _log_encoder_drift_from_init(wm, states):
 def compute_world_model_losses(wm, inputs):
     """WorldModel forward pass for spatial HRVQ.
 
-    This function is called from WorldModel.forward(self, inputs) with wm=self.
-    It uses wm.encoder_network, wm.rssm, wm.decoder_network, etc.
+    Called from WorldModel.forward(self, inputs) with wm=self.
 
     Args:
-        wm: WorldModel instance (has .encoder_network, .rssm, .decoder_network,
-            .reward_network, .continue_network, .contrastive_network, .config, .outer,
-            .add_loss, .add_metric, .add_info, .compute_contrastive_loss)
+        wm: WorldModel instance, holding the networks (.encoder_network, .rssm,
+            .decoder_network, .reward_network, .continue_network,
+            .contrastive_network), .config, .outer and the .add_loss, .add_metric,
+            .add_info and .compute_contrastive_loss helpers.
         inputs: tuple of (states, actions, rewards, dones, is_firsts, model_steps)
     Returns:
-        outputs: dict (empty - losses registered via add_loss)
+        outputs: empty dict; every loss is registered through wm.add_loss
     """
     # Unpack Inputs (B, L, ...)
     states, actions, rewards, dones, is_firsts, model_steps = inputs
 
-    # Outputs dict (losses registered via add_loss, not returned)
     outputs = {}
 
     assert actions.shape[1] == wm.config.L
 
-    # 1. Encoder Forward
+    # 1. Encoder Forward: CNN -> spatial HRVQ -> stoch
 
-    # Encode observations: CNN -> spatial HRVQ -> stoch
     encoder_out = wm.encoder_network(states)
 
     # Encoder drift from this run's own step-0 state (log-only, throttled).
@@ -96,16 +92,11 @@ def compute_world_model_losses(wm, inputs):
     tssm_states = {"stoch": encoder_out["stoch"]}             # (B, L, 16, 256)
     hrvq_info = encoder_out["hrvq_info"]
     pre_vq_features = encoder_out["pre_vq_features"]          # (B, L, 4096)
-    # hrvq_info["indices"][level]: (B, L, 16) - codebook indices per position per level
-    # hrvq_info["vq_loss"]: scalar - total commitment loss
-    # hrvq_info["z_q_spatial"]: (B, L, 16, 256) - quantized spatial tokens
-    # hrvq_info["z_q_levels_spatial"]: list of 3, each (B, L, 16, 256)
 
     num_levels = len(hrvq_info["z_q_levels_spatial"])
 
-    # 2. TSSM Observe
+    # 2. TSSM Observe: prior from the dynamics head, posterior from the encoder
 
-    # Run TSSM: creates prior (from dynamics) and posterior (from encoder)
     posts, priors = wm.rssm.observe(
         states=tssm_states,
         prev_actions=actions,
@@ -122,9 +113,8 @@ def compute_world_model_losses(wm, inputs):
     for level in range(num_levels):
         posts[f"logits_l{level}"] = priors[f"logits_l{level}"]
 
-    # 3. Feature Extraction & Predictions
+    # 3. Feature Extraction & Predictions: stoch_flat (4096) + deter (512) = 4608
 
-    # Get features: stoch_flat (4096) + deter (512) = 4608
     feats = wm.rssm.get_feat(posts)
 
     # Predict rewards
@@ -141,10 +131,9 @@ def compute_world_model_losses(wm, inputs):
     # Augment
     states_aug = torch.stack([wm.config.contrastive_augments(states_flatten[b]) for b in range(states_flatten.shape[0])], dim=0).reshape(states.shape)
 
-    # Forward encoder only on augmented (NO second TSSM observe)
+    # Encoder only on the augmented view, no second TSSM observe. The embed side
+    # takes the continuous pre-VQ features rather than the quantized ones.
     posts_con = wm.encoder_network(states_aug)
-
-    # Use pre_vq_features for contrastive embed (continuous, not post-VQ)
     con_embed = posts_con["pre_vq_features"]  # (B, L, 4096)
 
     # Continuous feats for contrastive predictor side:
@@ -184,7 +173,7 @@ def compute_world_model_losses(wm, inputs):
         # Add Accuracy
         wm.add_metric("acc_con" if t == 0 else "acc_con_{}".format(t), acc_con)
 
-    # 5. Cascade Reconstruction Loss (3 levels)
+    # 5. Cascade Reconstruction Loss
 
     level_weights = wm.config.echelon_level_loss_weights  # [1.0, 0.5, 0.1]
     for level in range(num_levels):
@@ -274,10 +263,9 @@ def compute_world_model_losses(wm, inputs):
     for level in range(num_levels):
         wm.add_info(f"vq_perplexity_l{level}", hrvq_info["perplexities"][level].item())
 
-    # Log-only probes: per-level codebook usage (unique codes over codebook
-    # size), which complements the perplexity above, and the per-level relative
-    # residual error ||r_l - z_q_l||^2 / ||r_l||^2, which shows how much work
-    # each level of the hierarchy does.
+    # Log-only probes: per-level codebook usage (unique codes over codebook size)
+    # and relative residual error ||r_l - z_q_l||^2 / ||r_l||^2, which shows how
+    # much work each level of the hierarchy does.
     usage_stats = wm.encoder_network.hrvq.get_codebook_usage(hrvq_info["indices"])
     for level in range(num_levels):
         wm.add_info(f"vq_usage_l{level}", usage_stats[f"usage_{level}"])
