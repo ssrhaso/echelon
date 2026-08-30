@@ -1,37 +1,34 @@
-# ECHELON codebook transfer sweep, run locally on one GPU.
+# ECHELON codebook transfer sweep, run locally on one GPU. Conditions and
+# target game come from experiments\transfer_freezing.yaml.
 #
-# Usage (run from anywhere; the script chdirs to the repo root):
+# Usage (from anywhere; the script chdirs to the repo root):
 #   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1                    # setup + print commands
 #   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Run               # setup + run every condition
 #   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Only freeze-CB0   # setup + run one condition
 #   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -SkipSetup -Run    # skip env setup, just run
 #   powershell -ExecutionPolicy Bypass -File experiments\setup_transfer.ps1 -Run -LowVRAM      # 8GB GPUs: bf16 + memory tweaks
-#
-# Conditions and target game are defined in experiments\transfer_freezing.yaml.
 
 param(
     [switch]$Run,
     [string]$Only = "",
     [switch]$SkipSetup,
-    [switch]$LowVRAM   # 8GB GPUs: bf16 + memory tweaks. Opt-in; off by default.
+    [switch]$LowVRAM   # 8GB GPUs: bf16 + memory tweaks
 )
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "ECHELON codebook transfer setup" -ForegroundColor Cyan
 
-# Low-VRAM profile for 8GB cards, opt-in so default launches are unchanged.
 # bf16 keeps the HRVQ logit cascade off the fp16 overflow path while engaging
-# Ampere tensor cores, expandable_segments lets the allocator reclaim memory
-# instead of fragmenting, and figure logging is disabled per run below.
+# Ampere tensor cores; expandable_segments lets the allocator reclaim memory
+# rather than fragment. Figure logging is disabled per run below.
 if ($LowVRAM) {
     $env:override_config = '{"precision":"bfloat16"}'
     $env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
     Write-Host "LowVRAM profile ON: precision=bfloat16, expandable_segments=True, figure logging disabled" -ForegroundColor Magenta
 }
 
-# Resolve the repo root and chdir there so relative paths (nnet/, main.py,
-# transfer_ckpt/) resolve wherever the script was invoked from.
+# chdir to the repo root so relative paths resolve wherever this was invoked from
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepoRoot
 Write-Host "Repo root: $RepoRoot" -ForegroundColor DarkGray
@@ -113,8 +110,8 @@ print('DOWNLOADED:', dst)
 $env:TRANSFER_CKPT = (Resolve-Path $PongCkpt).Path
 Write-Host "  TRANSFER_CKPT = $env:TRANSFER_CKPT" -ForegroundColor Green
 
-# ---- Parse the sweep definition into a flat job list ----
-# Each line: name|seed|freeze_levels|freeze_encoder|init_encoder|transfer|transfer_all|env_name|run_name|eval_period|keep_last_k|description
+# Parse the sweep definition into one line per run:
+# name|seed|freeze_levels|freeze_encoder|init_encoder|transfer|transfer_all|env_name|run_name|eval_period|keep_last_k|description
 $parser = @"
 import yaml
 cfg = yaml.safe_load(open('$ConfigFileFwd'))
@@ -187,8 +184,7 @@ function Get-LaunchArgs($job) {
         $launch += "--init_encoder"
     }
     if ($LowVRAM) {
-        # Per-epoch figure logging is the biggest periodic VRAM spike and does
-        # not affect the transfer metrics.
+        # Per-epoch figure logging is the largest periodic VRAM spike
         $launch += @("--log_figure_period_epoch", 9999)
     }
     $target = $job.EnvName -replace '^atari100k-', ''
@@ -207,7 +203,6 @@ foreach ($job in $jobs) {
 }
 Write-Host ""
 
-# ---- Filter jobs if -Only was passed ----
 if ($Only -ne "") {
     $jobs = $jobs | Where-Object { $_.Name -eq $Only }
     if ($jobs.Count -eq 0) {
@@ -216,7 +211,6 @@ if ($Only -ne "") {
     }
 }
 
-# ---- Execute or print ----
 $env:env_name = ($jobs | Select-Object -First 1).EnvName
 $env:run_name = ($jobs | Select-Object -First 1).RunName
 

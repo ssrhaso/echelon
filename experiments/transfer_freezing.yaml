@@ -1,23 +1,22 @@
-# Codebook transfer sweep: a Pong source checkpoint into one target game.
-#
-# The conditions below are the ladder and controls reported in the paper. Set
+# Codebook transfer sweep: a Pong source checkpoint into one target game. The
+# conditions below are the ladder and controls reported in the paper. Set
 # env_name to the target: atari100k-breakout, atari100k-demon_attack,
 # atari100k-ms_pacman or atari100k-up_n_down.
 #
-# Consumed by experiments/setup_transfer.ps1 (local) and, through the generated
-# run manifest, by experiments/isca_transfer.slurm (SLURM).
+# Read by experiments/setup_transfer.ps1 locally and, through the generated run
+# manifest, by experiments/isca_transfer.slurm on SLURM.
 
 transfer_checkpoint: transfer_ckpt/pong_seed5_best.ckpt
 transfer_checkpoint_artifact: haso-university-of-the-west-of-england/nnet/pong-source-checkpoints:pong-seed5-source
 env_name: atari100k-breakout
 run_name: hrvq_transfer
 
-# Base flags applied to every launch
+# Applied to every launch
 base_args:
   eval_period_epoch: 5
   keep_last_k: 3
 
-# Each experiment runs once per seed in its `seeds` list.
+# One run per seed in each experiment's `seeds` list.
 #   transfer:       load the source checkpoint at all (default true)
 #   freeze_levels:  null | "0" | "0,1" | "0,1,2"; a condition transfers exactly
 #                   the levels it pins, so unpinned levels start from random init

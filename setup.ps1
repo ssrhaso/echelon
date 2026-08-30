@@ -1,11 +1,8 @@
-# ECHELON Windows Setup
+# ECHELON Windows setup: installs torch (cu128), the Atari dependencies and the
+# ROMs, logs into W&B, disables sleep, and patches nnet/envs/__init__.py so the
+# missing dm_control import does not crash. Stops before launching training.
 #
-# Usage (from inside the extracted repo):
 #   powershell -ExecutionPolicy Bypass -File setup.ps1
-#
-# Installs torch (cu128), Atari deps, ROMs, logs into W&B, disables sleep,
-# and runtime-patches nnet/envs/__init__.py so the missing dm_control import
-# doesn't crash on Windows. Stops before launching training.
 
 $ErrorActionPreference = "Stop"
 

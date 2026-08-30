@@ -1,10 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# ECHELON Setup
-# Usage
-#   ./setup.sh          - pip install + ROMs only (local dev)
-#   ./setup.sh --vast   - full Vast.ai provisioning (system deps + venv + install)
+# ECHELON setup
+#   ./setup.sh          pip install + ROMs only
+#   ./setup.sh --vast   full Vast.ai provisioning: system deps, venv, install
 
 if [[ "${1:-}" == "--vast" ]]; then
     echo "=== Vast.ai full setup ==="
