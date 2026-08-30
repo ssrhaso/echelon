@@ -13,26 +13,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Solve dm_control bug (EGL is Linux-only)
 import os
 import sys
+
+# EGL is Linux-only
 if sys.platform == "linux":
     os.environ["MUJOCO_GL"] = "egl"
 
-# PyTorch
-import torch
-
-# Functions
-import functions
-
-# Other
-import random
-import numpy as np
 import argparse
 import importlib
+import random
 import warnings
 
-# Disable Warnings
+import numpy as np
+import torch
+
+import functions
+
 warnings.filterwarnings("ignore")
 
 def seed_everything(seed):
@@ -46,25 +43,17 @@ def seed_everything(seed):
 
 def main(args):
 
-    ###############################################################################
-    # Init
-    ###############################################################################
-
-    # Seed
     if args.seed is not None:
         seed_everything(args.seed)
         print("Seed: {}".format(args.seed))
 
-    # Print Mode
     print("Mode: {}".format(args.mode))
 
-    # Load Config
     args.config = importlib.import_module(args.config_file.replace(".py", "").replace("/", "."))
 
-    # Load Model
     model = functions.load_model(args)
 
-    # Codebook Cross-Transfer and Freezing
+    # Codebook cross-transfer and freezing
     if (args.transfer_checkpoint is not None or args.freeze_levels is not None
             or args.freeze_encoder or args.init_encoder):
         from nnet.modules.twister.hrvq.transfer import (
@@ -79,54 +68,44 @@ def main(args):
             source_state = _load_source_state(model, args.transfer_checkpoint)
 
             if args.transfer_all:
-                # Whole-model transfer carries the encoder, so the codebook-only
-                # path below is skipped.
+                # Whole-model transfer carries the encoder too
                 summary = load_and_transfer_all(model, args.transfer_checkpoint, source_state)
                 print_transfer_provenance(summary, args.transfer_checkpoint)
             else:
                 transfer_levels = freeze_levels if freeze_levels else [0, 1, 2]
                 load_and_transfer_codebooks(model, args.transfer_checkpoint, transfer_levels, source_state)
 
-                # Source-initialise the encoder CNN alongside the codebooks.
-                # --init_encoder leaves it trainable, --freeze_encoder pins it.
+                # --init_encoder leaves the encoder trainable, --freeze_encoder pins it
                 if args.freeze_encoder or args.init_encoder:
                     load_and_transfer_encoder(model, args.transfer_checkpoint, source_state)
 
-            del source_state  # Free memory
+            del source_state
         elif args.freeze_encoder:
             print("WARNING: --freeze_encoder without --transfer_checkpoint freezes the current encoder weights as-is")
 
-        # Freeze specified VQ levels
         if freeze_levels:
             model.encoder_network.hrvq.freeze_levels(freeze_levels)
             print(f"Frozen VQ levels: {freeze_levels}")
 
-        # Freeze the encoder CNN. requires_grad_ alone would not hold: the
-        # _frozen flag is what survives the per-step regrad in set_require_grad.
+        # requires_grad_ alone would not hold: the _frozen flag is what survives
+        # the per-step regrad in set_require_grad.
         if args.freeze_encoder:
             for p in model.encoder_network.cnn.parameters():
                 p._frozen = True
                 p.requires_grad_(False)
             print("Frozen encoder CNN")
 
-        # Store freeze/transfer metadata for W&B logging
+        # Freeze and transfer metadata, logged to W&B
         model._freeze_levels = args.freeze_levels
         model._transfer_source = args.transfer_checkpoint
         model._freeze_encoder = args.freeze_encoder
         model._init_encoder = args.init_encoder
         model._transfer_all = args.transfer_all
 
-        # Parameter audit
         print_parameter_audit(model)
 
-    # Load Dataset
     dataset_train, dataset_eval = functions.load_datasets(args)
 
-    ###############################################################################
-    # Modes
-    ###############################################################################
-
-    # Training
     if args.mode == "training":
 
         model.fit(
@@ -157,7 +136,6 @@ def main(args):
             verbose_progress_bar=args.verbose_progress_bar
         )
 
-    # Evaluation
     elif args.mode == "evaluation":
 
         model._evaluate(
@@ -167,13 +145,11 @@ def main(args):
             verbose_progress_bar=args.verbose_progress_bar,
         )
 
-    # Pass
     elif args.mode == "pass":
         pass
 
 if __name__ == "__main__":
 
-    # Args
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config_file",          type=str,   default="configs/echelon.py",                                       help="Python configuration file containing model hyperparameters")
     parser.add_argument("-m", "--mode",                 type=str,   default="training", choices=["training", "evaluation", "pass"],     help="Run mode")
@@ -202,20 +178,19 @@ if __name__ == "__main__":
     # Reproducibility
     parser.add_argument("--seed",                       type=int,   default=None,                                                       help="Global random seed for reproducibility")
 
-    # Codebook Freezing / Transfer
+    # Codebook freezing and transfer
     parser.add_argument("--freeze_levels",              type=str,   default=None,                                                       help="Comma-separated VQ levels to freeze, e.g. '0,1'")
     parser.add_argument("--freeze_encoder",             action="store_true",                                                            help="Source-initialise the encoder CNN from --transfer_checkpoint and hold it fixed")
     parser.add_argument("--init_encoder",               action="store_true",                                                            help="Source-initialise the encoder CNN from --transfer_checkpoint but leave it trainable")
     parser.add_argument("--transfer_checkpoint",        type=str,   default=None,                                                       help="Path to checkpoint for VQ codebook cross-transfer")
-    parser.add_argument("--transfer_all",               action="store_true",                                                            help="Weight-transfer baseline: warm-start every task-agnostic weight (encoder, codebooks, world model, decoder, reward/value/continue heads) from --transfer_checkpoint. Action-conditioned modules are re-initialised. Nothing is frozen unless --freeze_* is also given.")
+    parser.add_argument("--transfer_all",               action="store_true",                                                            help="Warm-start every task-agnostic weight from --transfer_checkpoint; action-conditioned modules are re-initialised and nothing is frozen")
 
     # Debug
     parser.add_argument("--detect_anomaly",             action="store_true",                                                            help="Enable or disable the autograd anomaly detection")
     
-    # Parse Args
     args = parser.parse_args()
 
-    # Validate the arguments at startup rather than failing part-way into a run
+    # Validate at startup rather than part-way into a run
     if args.transfer_checkpoint is not None and not os.path.isfile(args.transfer_checkpoint):
         parser.error(
             "--transfer_checkpoint path does not exist: {}".format(args.transfer_checkpoint)
@@ -236,19 +211,15 @@ if __name__ == "__main__":
             )
 
     if args.freeze_encoder and args.transfer_checkpoint is None:
-        parser.error(
-            "--freeze_encoder requires --transfer_checkpoint (freezing a randomly "
-            "initialised encoder is never intended)"
-        )
+        parser.error("--freeze_encoder requires --transfer_checkpoint")
 
     if args.init_encoder:
         if args.transfer_checkpoint is None:
-            parser.error("--init_encoder requires --transfer_checkpoint (there is nothing to initialise from)")
+            parser.error("--init_encoder requires --transfer_checkpoint")
         if args.freeze_encoder:
             parser.error("--init_encoder is redundant with --freeze_encoder, which already source-initialises the encoder")
 
     if args.transfer_all and args.transfer_checkpoint is None:
-        parser.error("--transfer_all requires --transfer_checkpoint (there is nothing to transfer from)")
+        parser.error("--transfer_all requires --transfer_checkpoint")
 
-    # Run main
     main(args)
