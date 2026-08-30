@@ -1,23 +1,18 @@
 #!/bin/bash
-# ISCA (Exeter HPC) job-array: HRVQ scratch baselines across the remaining Atari100k games.
-# 20 games x 3 seeds = 60 array tasks, GAME-MAJOR: a game's 3 seeds are contiguous indices
-# (0,1,2 = game0; 3,4,5 = game1; ...), so games complete in order.
-#   game = GAMES[i/3],  seed = i%3.
+# SLURM job array: HRVQ scratch baselines, 20 Atari100k games x 3 seeds.
+# Tasks are game-major, so games complete in order: game = GAMES[i/3], seed = i%3.
 #
-# Launch:
-#   cd ~/echelon
 #   sbatch -A <account> experiments/isca_scratch.slurm
-# Watch: squeue --me ; tail -f logs/scratch_*_*.out
 
 #SBATCH --export=ALL
 #SBATCH -D .
 #SBATCH -p gpu
-#SBATCH -A REPLACE_WITH_ACCOUNT_CODE          # overridden by -A on the sbatch line
+#SBATCH -A REPLACE_WITH_ACCOUNT_CODE   # overridden by -A on the sbatch line
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
-#SBATCH --exclusive          # whole node per job: keeps the wandb service socket per-run
-#SBATCH --array=0-59%6       # 60 tasks (20 games x 3 seeds); %6 = 2 games in flight, in order
+#SBATCH --exclusive                    # one node per job: per-run wandb service socket
+#SBATCH --array=0-59%6                 # 60 tasks, 2 games in flight
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=H.Ahmad@exeter.ac.uk
 #SBATCH -o logs/scratch_%A_%a.out
@@ -25,7 +20,6 @@
 
 set -u
 
-# --- games (game-major): high-signal first (blowout + transfer candidates), then the rest ---
 GAMES=(gopher kung_fu_master private_eye jamesbond boxing krull \
        alien amidar assault asterix bank_heist battle_zone chopper_command \
        crazy_climber frostbite hero kangaroo qbert road_runner seaquest)
@@ -34,15 +28,15 @@ i=$SLURM_ARRAY_TASK_ID
 GAME=${GAMES[$((i/3))]}
 SEED=$((i%3))
 
-# --- env (built by experiments/isca_setup.sh) ---
+# Environment built by experiments/isca_setup.sh
 module load Anaconda3 2>/dev/null || true
 source activate "$HOME/echelon-env" 2>/dev/null || conda activate "$HOME/echelon-env"
 cd "$HOME/echelon"
 
 export env_name="atari100k-${GAME}" run_name=hrvq_baseline
-export override_config='{"precision":"bfloat16"}'   # bf16: A100 tensor cores, and the baseline precision
+export override_config='{"precision":"bfloat16"}'
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-# Per-task isolation (unique temp + wandb dir) so concurrent tasks never cross-contaminate wandb.
+# Task-unique temp and wandb directories, so concurrent tasks stay isolated
 export TMPDIR="$HOME/tmp/${SLURM_JOB_ID}"; mkdir -p "$TMPDIR"
 export WANDB_DIR="$TMPDIR"
 export PYTHONUNBUFFERED=1

@@ -1,21 +1,20 @@
 #!/bin/bash
-# One-time cluster setup for the transfer sweeps. Run once on a login node or in a
-# short interactive session: it builds the conda environment on the shared
-# filesystem, installs dependencies and stages the source checkpoint, so every
-# array task can reuse them. No training happens here.
+# One-time cluster setup for the sweeps, run on a login node or in a short
+# interactive session. Builds the conda environment on shared storage, installs
+# dependencies and stages the source checkpoint for the array tasks to reuse.
 #
 #   bash experiments/isca_setup.sh
 #
 # The two lines marked SITE may need the cluster's own module and conda names.
 set -e
 
-# /tmp on login nodes is tiny; route pip temp + cache onto lustre (huge quota)
-# so the multi-GB torch/CUDA wheels don't blow up with "No space left on device".
+# /tmp on login nodes is small; route pip temp and cache onto shared storage so
+# the multi-GB torch wheels do not run out of space.
 export TMPDIR="$HOME/tmp"
 export PIP_CACHE_DIR="$HOME/.cache/pip"
 mkdir -p "$TMPDIR" "$PIP_CACHE_DIR"
 
-# --- SITE: the conda module name may differ (module avail anaconda) ---
+# SITE: the conda module name may differ (module avail anaconda)
 module load Anaconda3 2>/dev/null || module load anaconda3 2>/dev/null || true
 
 ENVDIR="$HOME/echelon-env"
@@ -25,7 +24,7 @@ REPO="$HOME/echelon"
 if [ ! -d "$ENVDIR" ]; then
     conda create -y -p "$ENVDIR" python=3.11
 fi
-# --- SITE: if `conda activate` errors, source the cluster's conda.sh first ---
+# SITE: if `conda activate` errors, source the cluster's conda.sh first
 source activate "$ENVDIR" 2>/dev/null || conda activate "$ENVDIR"
 
 # 2. repo
@@ -35,11 +34,11 @@ fi
 cd "$REPO"
 git pull --ff-only || true
 
-# 3. deps (ale-py bundles ROMs; no AutoROM needed)
+# 3. deps (ale-py bundles the ROMs)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 pip install gymnasium ale-py opencv-python wandb tqdm av tensorboard pyyaml
 
-# 4. patch dm_control import so the repo loads without mujoco
+# 4. patch the dm_control import so the repo loads without mujoco
 python - <<'PY'
 p = "nnet/envs/__init__.py"; s = open(p).read()
 if "try:\n    from . import dm_control" not in s:
@@ -49,8 +48,8 @@ else:
     print("dm_control already patched")
 PY
 
-# 5. W&B auth (writes ~/.netrc; array tasks inherit it). Paste your key at the prompt,
-#    or `export WANDB_API_KEY=...` before running this script.
+# 5. W&B auth, written to ~/.netrc and inherited by the array tasks. Paste the key
+#    at the prompt, or export WANDB_API_KEY before running this script.
 wandb login
 
 # 6. stage the source checkpoint named by the sweep definition
@@ -75,6 +74,6 @@ mkdir -p logs
 
 # 8. sanity
 python -c "import torch; print('torch', torch.__version__, 'CUDA-build', torch.version.cuda)"
-echo "Setup complete. Submit the transfer sweep with, e.g.:"
+echo "Setup complete. Submit a sweep with, e.g.:"
 echo "  sbatch -A <account> experiments/isca_transfer.slurm"
 echo "  sbatch -A <account> experiments/isca_scratch.slurm"
