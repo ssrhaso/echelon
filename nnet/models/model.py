@@ -694,9 +694,8 @@ class Model(modules.Module):
                 "transfer_all": getattr(self, '_transfer_all', False),
             }, allow_val_change=True)
 
-            # Execution provenance. Precision arrives only via the `override_config`
-            # env var; record it with host and GPU at startup so no audit has to
-            # reconstruct any of it from stdout.
+            # Precision arrives only through the `override_config` env var; record
+            # it with the host and GPU so no audit has to parse stdout.
             raw_override = os.environ.get("override_config", "")
             try:
                 parsed_override = json.loads(raw_override) if raw_override else {}

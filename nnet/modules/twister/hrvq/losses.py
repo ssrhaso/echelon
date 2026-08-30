@@ -136,10 +136,8 @@ def compute_world_model_losses(wm, inputs):
     posts_con = wm.encoder_network(states_aug)
     con_embed = posts_con["pre_vq_features"]  # (B, L, 4096)
 
-    # Continuous feats for contrastive predictor side:
-    # Replace get_feat(priors) [contains non-differentiable VQ stoch] with
-    # cat(pre_vq_features, deter) [continuous, differentiable, same 4608 dim].
-    # This lets InfoNCE gradients flow back through the encoder CNN and transformer.
+    # Predictor side: pre-VQ features instead of get_feat(priors), whose VQ stoch
+    # is non-differentiable, so InfoNCE reaches the encoder CNN and transformer.
     continuous_feats = torch.cat([pre_vq_features, priors['deter']], dim=-1)  # (B, L, 4608)
 
     # Contrastive steps loop
@@ -263,9 +261,8 @@ def compute_world_model_losses(wm, inputs):
     for level in range(num_levels):
         wm.add_info(f"vq_perplexity_l{level}", hrvq_info["perplexities"][level].item())
 
-    # Log-only probes: per-level codebook usage (unique codes over codebook size)
-    # and relative residual error ||r_l - z_q_l||^2 / ||r_l||^2, which shows how
-    # much work each level of the hierarchy does.
+    # Log-only probes: codebook usage (unique codes over codebook size) and
+    # relative residual error, i.e. how much work each level does
     usage_stats = wm.encoder_network.hrvq.get_codebook_usage(hrvq_info["indices"])
     for level in range(num_levels):
         wm.add_info(f"vq_usage_l{level}", usage_stats[f"usage_{level}"])

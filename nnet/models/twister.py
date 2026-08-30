@@ -1283,10 +1283,8 @@ class TWISTER(models.Model):
             fig = torchvision.utils.make_grid(outputs, nrow=self.config.L, normalize=False, scale_each=False).cpu()
             writer.add_image(tag, fig, step)
 
-            # Log Contrastive: 
-            # for each contrastive t, log a figure of contrastive_batch random samples from the batch and their contrastive_most_less most sim state
-            # repeat with less similar
-            # end up with 2*contrastive_steps figures of contrastive_batch*contrastive_most_less images
+            # Log Contrastive: per step, one figure of the most similar states for
+            # contrastive_batch random samples, and one of the least similar
             states_aug_con = states_aug_con.flatten(start_dim=0, end_dim=1)
 
             for t in range(self.config.contrastive_steps):

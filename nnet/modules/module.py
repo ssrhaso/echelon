@@ -78,10 +78,8 @@ class Module(nn.Module):
 
         for network in networks:
             if network != None:
-                # Parameters pinned by an explicit freeze (p._frozen, set e.g. by
-                # --freeze_encoder) must survive the per-step regrad cycle in
-                # train_step, which re-enables whole networks and would otherwise
-                # silently undo the freeze after the first optimisation step.
+                # Parameters pinned by an explicit freeze (p._frozen) must survive
+                # the per-step regrad in train_step, which re-enables whole networks.
                 pinned = [p for p in network.parameters() if getattr(p, "_frozen", False)]
                 network.requires_grad_(require_grad)
                 for p in pinned:
