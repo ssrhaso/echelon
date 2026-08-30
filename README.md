@@ -8,8 +8,8 @@ cross-game transfer.
 ![ECHELON architecture: encoder CNN, 3-level HRVQ tokenizer, TSSM and decoder, with per-level codebook freezing for cross-game transfer](assets/echelon_arch.gif)
 
 This repository holds the model, its configuration and the sweep definitions.
-The manuscript, its figures, the derived result tables and the analysis code that
-produces them are kept with the paper rather than here.
+The manuscript, its figures and the analysis code that produces them are kept
+with the paper.
 
 ## Method
 
@@ -33,10 +33,9 @@ prefix of levels. That prefix is the dial the transfer sweep varies.
 | [nnet/](nnet/) | The model: HRVQ tokenizer, transformer world model, actor-critic, training loop |
 | [experiments/](experiments/) | Sweep definition, setup scripts and SLURM array jobs |
 
-Run output is deliberately not versioned. Training writes checkpoints and replay
-buffers to `callbacks/` and raw stdout to `logs/`, both ignored. The W&B run
-history and the SLURM stdout logs are the source of truth for every result the
-paper reports.
+Run output is not versioned: training writes checkpoints and replay buffers to
+`callbacks/` and stdout to `logs/`, both ignored. The W&B run history and the
+SLURM logs are the source of truth for the reported results.
 
 ## Installation
 
@@ -65,13 +64,13 @@ env_name=atari100k-alien run_name=atari100k override_config='{"num_envs": 4, "ep
 `python3 main.py --help` lists every command-line flag with its default.
 
 `precision` accepts `float32` (the atari100k default), `float16` or `bfloat16`.
-On 8GB GPUs prefer `bfloat16`: it engages Ampere tensor cores for a large
-speedup and, unlike `float16`, its fp32-range exponent avoids the HRVQ
-logit-cascade overflow that produces a NaN on the first forward pass. Pair it
-with `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` and
+Prefer `bfloat16` on 8GB GPUs: it engages Ampere tensor cores and, unlike
+`float16`, its fp32-range exponent avoids the HRVQ logit-cascade overflow that
+NaNs on the first forward pass. Pair it with
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` and
 `--log_figure_period_epoch 9999` to stay inside the VRAM budget;
 `experiments\setup_transfer.ps1 -LowVRAM` applies all three. Keep precision
-constant within an ablation set so conditions stay comparable.
+constant within an ablation set.
 
 ## Evaluation
 
@@ -99,11 +98,10 @@ updates and drops its commitment term from the loss. Passing `--freeze_levels`
 without `--transfer_checkpoint` pins the levels at their random initialisation,
 which is the no-donor control.
 
-The conditions reported in the paper as `adapt-CB012+encinit` and
-`freeze-CB012+encinit` use `--init_encoder`: in the runs behind those numbers the
-encoder was source-initialised but never held fixed. `--freeze_encoder` in this
-codebase does hold it fixed, so it is a different intervention from the one the
-paper reports.
+The paper's `adapt-CB012+encinit` and `freeze-CB012+encinit` conditions use
+`--init_encoder`: their encoders were source-initialised but never held fixed.
+`--freeze_encoder` does hold the encoder fixed, so it is a different
+intervention.
 
 Locally, [experiments/setup_transfer.ps1](experiments/setup_transfer.ps1) installs
 dependencies, fetches the source checkpoint and emits the per-condition launch
@@ -119,15 +117,14 @@ On SLURM, [experiments/isca_setup.sh](experiments/isca_setup.sh) builds the
 environment and stages the source checkpoint.
 [experiments/isca_transfer.slurm](experiments/isca_transfer.slurm) runs the
 transfer sweep and [experiments/isca_scratch.slurm](experiments/isca_scratch.slurm)
-the from-scratch baselines. Each array task of the transfer job maps to one row
-of a run manifest CSV, one (game, condition, seed) cell per row, expanded from
-the sweep definition.
+the from-scratch baselines. Each array task of the transfer job runs one row of a
+run manifest CSV expanded from the sweep definition, one (game, condition, seed)
+per row.
 
 ## Citation
 
-This repository is the companion code for the ECHELON paper (under review).
-Until the paper is public, cite the repository directly via
-[CITATION.cff](CITATION.cff), which GitHub also exposes through the "Cite this
+The ECHELON paper is under review. Until it is public, cite the repository via
+[CITATION.cff](CITATION.cff), which GitHub exposes through the "Cite this
 repository" sidebar.
 
 If you build on ECHELON, please also cite TWISTER, the architecture it extends:
