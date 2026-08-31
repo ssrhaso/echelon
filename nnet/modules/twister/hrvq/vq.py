@@ -41,16 +41,14 @@ class VectorQuantizerEMA(nn.Module):
         self.revival_interval = revival_interval
         self.revival_threshold = revival_threshold
 
-        # Codebook Embeddings : (K, D)
+        # Codebook: (K, D)
         embedding = torch.randn(num_codes, embed_dim)
         self.register_buffer('embedding', embedding)
 
-        # EMA Tracking Buffers
         self.register_buffer("ema_cluster_size", torch.zeros(num_codes))
         self.register_buffer("ema_embedding_sum", embedding.clone())
         self.register_buffer("update_count", torch.tensor(0))
 
-        # Freeze flag: when True, skip EMA updates and zero commitment loss
         self.frozen = False
 
     def freeze(self):
@@ -97,8 +95,7 @@ class VectorQuantizerEMA(nn.Module):
 
         if num_dead > 0:
             rand_indices = torch.randint(0, z_flat.shape[0], (num_dead,), device=z_flat.device)
-            # Masked index-assignment needs matching dtypes, and the codebook
-            # buffer stays fp32 while z_flat may be bf16 under autocast.
+            # The codebook buffer stays fp32 while z_flat may be bf16 under autocast.
             self.embedding[dead_mask] = z_flat[rand_indices].detach().to(self.embedding.dtype)
             self.ema_cluster_size[dead_mask] = self.revival_threshold
             self.ema_embedding_sum[dead_mask] = self.embedding[dead_mask] * self.revival_threshold
@@ -156,8 +153,8 @@ class VectorQuantizerEMA(nn.Module):
 class HRVQ(nn.Module):
     """Hierarchical residual vector quantization.
 
-    Level l quantizes the residual left by levels 0..l-1, and the output is the
-    sum over levels with straight-through gradients to z_e.
+    Level l quantizes the residual left by levels 0..l-1; the output is their sum,
+    with straight-through gradients to z_e.
     """
 
     def __init__(
@@ -206,15 +203,14 @@ class HRVQ(nn.Module):
         residual = z_e
         for level in range(self.num_levels):
             z_q_st_level, indices_level, loss_level, perp_level = self.quantizers[level](residual)
-            # Raw lookup, not straight-through: the residual needs the
-            # undifferentiated quantized vector.
+            # Raw lookup: the residual needs the undifferentiated vector.
             z_q_raw = self.quantizers[level].embedding[indices_level]
             z_q_levels.append(z_q_raw)
             indices_all.append(indices_level)
             total_vq_loss = total_vq_loss + loss_level
             perplexities.append(perp_level)
 
-            # Relative residual error at this level, log-only.
+            # Relative residual error, log-only.
             with torch.no_grad():
                 num = (residual.detach() - z_q_raw.detach()).pow(2).sum(dim=-1)
                 den = residual.detach().pow(2).sum(dim=-1).clamp_min(1e-8)
@@ -251,7 +247,7 @@ class HRVQ(nn.Module):
         return z_q
 
     def decode_partial(self, indices: list[torch.Tensor], up_to_level: int) -> torch.Tensor:
-        """Sum levels 0..up_to_level. For cascade reconstruction."""
+        """Sum levels 0..up_to_level, for cascade reconstruction."""
         assert 0 <= up_to_level < self.num_levels
         z_q = torch.zeros_like(self.quantizers[0].embedding[indices[0]])
         for level in range(up_to_level + 1):

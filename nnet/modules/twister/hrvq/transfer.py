@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Cross-game transfer of HRVQ codebooks and encoder weights, and the launch-time
-parameter audit recording what each run inherited."""
+"""Cross-game transfer of HRVQ codebooks and encoder weights, plus the launch-time
+parameter audit."""
 
 from collections import OrderedDict
 
@@ -30,7 +30,7 @@ def load_and_transfer_codebooks(model, checkpoint_path, levels, source_state=Non
     """Load VQ codebook buffers from an external checkpoint into the model.
 
     Copies embedding, ema_cluster_size, ema_embedding_sum and update_count for
-    each level named. The encoder CNN, world model and actor-critic are untouched.
+    each level named; nothing else is touched.
 
     Args:
         model: TWISTER model instance.
@@ -56,7 +56,7 @@ def load_and_transfer_codebooks(model, checkpoint_path, levels, source_state=Non
 def load_and_transfer_encoder(model, checkpoint_path, source_state=None):
     """Load encoder CNN weights from an external checkpoint into the model.
 
-    Copies every parameter and buffer of the encoder CNN. The HRVQ codebooks are
+    Copies every parameter and buffer of the encoder CNN; the codebooks are
     handled by load_and_transfer_codebooks.
 
     Args:
@@ -82,10 +82,9 @@ def load_and_transfer_encoder(model, checkpoint_path, source_state=None):
     print(f"  Transferred encoder CNN ({transferred} tensors) from {checkpoint_path}")
 
 
-# Modules whose parameter shapes depend on the action-space size. Targets do not
-# share an action count (Pong, Demon Attack and Up'n'Down have 6, Ms Pac-Man and
-# Asterix 9), so these are re-initialised in every target, including those whose
-# action count matches the source, to keep the condition uniform across games.
+# Modules whose parameter shapes depend on the action-space size. Re-initialised in
+# every target, even one whose action count matches the source, so the condition is
+# uniform across games.
 ACTION_CONDITIONED_PREFIXES = (
     "policy_network.",       # output dim = num_actions
     "contrastive_network.",  # input dim = feat_size + t * num_actions
@@ -96,15 +95,14 @@ ACTION_CONDITIONED_PREFIXES = (
 def load_and_transfer_all(model, checkpoint_path, source_state=None):
     """Warm-start every task-agnostic weight from a source checkpoint.
 
-    The whole-model-transfer baseline: it copies the encoder, HRVQ, world model,
+    The whole-model-transfer baseline: copies the encoder, HRVQ, world model,
     decoder and the reward, value and continue heads, leaving only
-    ACTION_CONDITIONED_PREFIXES at random init. Nothing is frozen here, so the
-    result is a pure warm start unless --freeze_* is also passed.
+    ACTION_CONDITIONED_PREFIXES at random init. Nothing is frozen, so the result
+    is a pure warm start unless --freeze_* is also passed.
 
-    A shape mismatch outside the action-conditioned modules, or a target
-    parameter absent from the source, aborts: either means the checkpoint is not
-    the same architecture, and a partial transfer would misreport the baseline.
-    A missing buffer is reported and tolerated.
+    A shape mismatch outside the action-conditioned modules, or a missing target
+    parameter, aborts: the checkpoint is then a different architecture and a
+    partial transfer would misreport the baseline. A missing buffer is tolerated.
 
     Args:
         model: TWISTER model instance, already built for the target game.
@@ -159,9 +157,8 @@ def load_and_transfer_all(model, checkpoint_path, source_state=None):
     if not transferred:
         raise KeyError("no transferable tensors found in: {}".format(checkpoint_path))
 
-    # Every exclusion prefix must match something. A renamed module would stop
-    # being excluded silently, and a target whose action count equals the source's
-    # would then inherit the source policy while 9-action targets raised on shape.
+    # A renamed module would drop out of the exclusion list silently and let a
+    # matching-action target inherit the source policy.
     unmatched = [p for p in ACTION_CONDITIONED_PREFIXES
                  if not any(k.startswith(p) for k in reinit)]
     if unmatched:
@@ -180,11 +177,7 @@ def load_and_transfer_all(model, checkpoint_path, source_state=None):
 
 
 def print_transfer_provenance(summary, checkpoint_path):
-    """Print which tensors the whole-model-transfer baseline carried over.
-
-    The counts go to the launch log so the difference between this baseline and
-    the codebook-only conditions is readable from stdout.
-    """
+    """Print which tensors the whole-model-transfer baseline carried over."""
     print("\nWeight-transfer provenance (source: {}):".format(checkpoint_path))
     print("  transferred     : {} tensors".format(len(summary["transferred"])))
     print("  re-initialised  : {} tensors (action-conditioned)".format(len(summary["reinit"])))
@@ -200,8 +193,8 @@ def print_transfer_provenance(summary, checkpoint_path):
 
 
 def print_parameter_audit(model):
-    """Print per-component parameter, trainable and buffer counts, and confirm
-    that every frozen HRVQ level reports frozen=True."""
+    """Print per-component parameter, trainable and buffer counts, and the frozen
+    state of each HRVQ level."""
     components = {
         "encoder_cnn": model.encoder_network.cnn,
         "vq_level_0": model.encoder_network.hrvq.quantizers[0],
@@ -241,7 +234,6 @@ def print_parameter_audit(model):
     print(f"{'TOTAL':<20} {total_params:>10,} {total_trainable:>10,} {total_buffers:>10,}")
     print("=" * 72)
 
-    # Assert frozen quantizers
     for i, q in enumerate(model.encoder_network.hrvq.quantizers):
         if q.frozen:
             print(f"  ASSERT PASS: VQ level {i} frozen=True, EMA updates disabled")
