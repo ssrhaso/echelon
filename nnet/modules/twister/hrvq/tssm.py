@@ -180,10 +180,8 @@ class SpatialHRVQTSSM(nn.Module):
         # Shared MLP: (*, 16, 160) -> (*, 16, sum(num_codes))
         logits_all = self.spatial_dynamics_mlp(pos_input)
 
-        # Split logits per level.
         all_logits = list(torch.split(logits_all, self.num_codes, dim=-1))
 
-        # Sample or argmax per level per position.
         all_indices = []
         for level_logits in all_logits:
             if sample:

@@ -26,24 +26,19 @@ from .decoder import spatial_cascade_decode
 def _log_encoder_drift_from_init(wm, states):
     """Log the MSE between the encoder's current features and its step-0 features.
 
-    The reference is this run's own step-0 encoder, not the source encoder, so
-    the measure is comparable across freeze conditions: a frozen encoder holds
-    drift at zero while a trainable one grows away from its initialisation.
-
-    Log-only: the probe state is a plain dict on wm.outer.__dict__, so it never
-    enters the state dict, the optimizer or the EMA buffers, and everything runs
-    under no_grad on a small detached fixed batch.
+    The reference is this run's own step-0 encoder, so the measure is comparable
+    across freeze conditions. Log-only: the probe state lives on
+    wm.outer.__dict__, outside the state dict, optimizer and EMA buffers.
     """
     state = wm.outer.__dict__.setdefault("_echelon_instr", {})
-    # wm.config is an AttrDict whose __getattr__ is dict.__getitem__, so a
-    # missing key raises KeyError, which getattr(..., default) does not catch.
+    # AttrDict.__getattr__ is dict.__getitem__, so a missing key raises KeyError.
     cfg = wm.config
     period = int(cfg.get("echelon_instr_period", 250)) if isinstance(cfg, dict) \
         else int(getattr(cfg, "echelon_instr_period", 250))
 
     with torch.no_grad():
         if "ref_feats" not in state:
-            # Snapshot a small, fixed eval batch + epoch-0 reference features.
+            # Snapshot a small fixed batch and its epoch-0 features.
             n = min(2, states.shape[0])
             fixed = states[:n].detach().clone()
             state["fixed_batch"] = fixed
@@ -66,10 +61,8 @@ def compute_world_model_losses(wm, inputs):
     Called from WorldModel.forward(self, inputs) with wm=self.
 
     Args:
-        wm: WorldModel instance, holding the networks (.encoder_network, .rssm,
-            .decoder_network, .reward_network, .continue_network,
-            .contrastive_network), .config, .outer and the .add_loss, .add_metric,
-            .add_info and .compute_contrastive_loss helpers.
+        wm: WorldModel instance, holding the networks, .config, .outer and the
+            .add_loss, .add_metric, .add_info and .compute_contrastive_loss helpers.
         inputs: tuple of (states, actions, rewards, dones, is_firsts, model_steps)
     Returns:
         outputs: empty dict; every loss is registered through wm.add_loss
@@ -261,8 +254,7 @@ def compute_world_model_losses(wm, inputs):
     for level in range(num_levels):
         wm.add_info(f"vq_perplexity_l{level}", hrvq_info["perplexities"][level].item())
 
-    # Log-only probes: codebook usage (unique codes over codebook size) and
-    # relative residual error, i.e. how much work each level does
+    # Log-only probes: codebook usage and relative residual error per level.
     usage_stats = wm.encoder_network.hrvq.get_codebook_usage(hrvq_info["indices"])
     for level in range(num_levels):
         wm.add_info(f"vq_usage_l{level}", usage_stats[f"usage_{level}"])

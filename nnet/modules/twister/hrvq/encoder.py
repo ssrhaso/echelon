@@ -52,7 +52,7 @@ class SpatialHRVQEncoder(nn.Module):
         self.stoch_size = stoch_size
         self.discrete = discrete
         self.num_positions = num_positions
-        self.position_dim = position_dim  # = 8 * dim_cnn = 256
+        self.position_dim = position_dim  # 8 * dim_cnn = 256
 
         if hrvq_num_codes is None:
             hrvq_num_codes = [512, 512, 512]
@@ -110,7 +110,6 @@ class SpatialHRVQEncoder(nn.Module):
             "hrvq_info": dict of spatial HRVQ outputs
             "pre_vq_features": (*, 4096) continuous features for contrastive
         """
-        # CNN spatial features: (*, 16, 256)
         spatial_features = self.forward_cnn(inputs)
 
         # Shared HRVQ over all 16 positions at once.
@@ -118,7 +117,7 @@ class SpatialHRVQEncoder(nn.Module):
         flat = spatial_features.reshape(-1, self.position_dim)  # (N*16, 256)
         hrvq_out = self.hrvq(flat)
 
-        # Back to spatial shape.
+        # Back to spatial shape: (*, 16, 256).
         z_q_spatial = hrvq_out["z_q"].reshape(batch_shape + (self.num_positions, self.position_dim))
         z_q_levels_spatial = [
             zq.reshape(batch_shape + (self.num_positions, self.position_dim))
