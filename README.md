@@ -123,11 +123,7 @@ per row.
 
 ## Citation
 
-The ECHELON paper is under review. Until it is public, cite the repository via
-[CITATION.cff](CITATION.cff), which GitHub exposes through the "Cite this
-repository" sidebar.
-
-If you build on ECHELON, please also cite TWISTER, the architecture it extends:
+If you build on ECHELON, please cite TWISTER, the architecture it extends:
 
 ```bibtex
 @inproceedings{burchi2025twister,

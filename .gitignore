@@ -60,6 +60,10 @@ experiments/isca_pilot_*.csv
 # paper and is kept out of the companion codebase.
 IRIS/
 
+# --- Citation metadata (local only) ---
+# The paper is under review, so the repository does not advertise a citation.
+CITATION.cff
+
 # --- Paper (local only) ---
 # The repository is the companion codebase; the manuscript, its build products
 # and internal reports/working notes stay local.
