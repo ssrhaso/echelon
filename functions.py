@@ -12,19 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# PyTorch
 import torch
 
-# Other
 import os
 import glob
 
 def find_last_checkpoint(callback_path, return_full_path=False):
+    """Return the checkpoint with the highest step count, or None."""
 
-    # All Checkpoints
     checkpoints = glob.glob(os.path.join(callback_path, "checkpoints_*.ckpt"))
 
-    # Select Last Checkpoint else None
     max_steps = 0
     last_checkpoint = None
     for checkpoint in checkpoints:
@@ -34,15 +31,14 @@ def find_last_checkpoint(callback_path, return_full_path=False):
             max_steps = checkpoint_steps
             last_checkpoint = checkpoint
 
-    # Join path
     if last_checkpoint != None and return_full_path:
         last_checkpoint = os.path.join(callback_path, last_checkpoint)
 
     return last_checkpoint
 
 def load_model(args):
+    """Build the configured model on the available device and restore a checkpoint."""
 
-    # Model Device
     device = torch.device("cuda:0" if torch.cuda.is_available() and not args.cpu else "cpu")
     if "cuda" in str(device):
         print("device: {}, {}, {}MB".format(device, torch.cuda.get_device_properties(device).name, int(torch.cuda.get_device_properties(device).total_memory // 1e6)))
@@ -51,31 +47,27 @@ def load_model(args):
         print("device: {}".format(device))
         args.num_gpus = 1
 
-    # Set Model Device
     model = args.config.model.to(device)
 
-    # Set Callback Path
+    # Callback path defaults to the config module path, plus an optional tag
     args.config.callback_path = getattr(args.config, "callback_path", os.path.join("callbacks", "/".join(args.config_file.replace(".py", "").split("/")[1:])))
-    # Append callback Tag
     if hasattr(args.config, "callback_tag"):
         args.config.callback_path = os.path.join(args.config.callback_path, args.config.callback_tag)
 
-    # Last Checkpoint
     if args.load_last:
         last_checkpoint = find_last_checkpoint(args.config.callback_path)
         if last_checkpoint != None:
             args.checkpoint = last_checkpoint
 
-    # Load Checkpoint
     if args.checkpoint is not None:
         model.load(os.path.join(args.config.callback_path, args.checkpoint))
 
-    # Model Summary
     model.summary(show_dict=args.show_dict, show_modules=args.show_modules)
     
     return model
 
 def load_datasets(args):
+    """Wrap the configured training and evaluation datasets in DataLoaders."""
 
     def print_dataset(args, dataset, tag):
 
@@ -84,7 +76,6 @@ def load_datasets(args):
     # Training Dataset
     if hasattr(args.config, "training_dataset"):
 
-        # DataLoader
         dataset_train = torch.utils.data.DataLoader(
             dataset=args.config.training_dataset,
             batch_size=args.config.training_dataset.batch_size,
@@ -97,8 +88,7 @@ def load_datasets(args):
             worker_init_fn=getattr(args.config, "worker_init_fn", None),
             persistent_workers=args.config.training_dataset.persistent_workers,
         )
-        
-        # Loaded Print
+
         print_dataset(args, dataset_train, "Training")
 
     else:
@@ -108,13 +98,12 @@ def load_datasets(args):
     # Evaluation Dataset
     if hasattr(args.config, "evaluation_dataset"):
 
-        # Multiple Evaluation datasets
+        # One or several evaluation datasets
         if isinstance(args.config.evaluation_dataset, list):
 
             dataset_eval = []
             for dataset in args.config.evaluation_dataset:
 
-                # DataLoader
                 dataset_eval.append(torch.utils.data.DataLoader(
                     dataset=dataset,
                     batch_size=dataset.batch_size,
@@ -127,14 +116,11 @@ def load_datasets(args):
                     worker_init_fn=getattr(args.config, "worker_init_fn", None),
                     persistent_workers=dataset.persistent_workers,
                 ))
-            
-                # Loaded Print
+
                 print_dataset(args, dataset_eval[-1], "Evaluation")
 
-        # One Evaluation dataset
         else:
 
-            # DataLoader
             dataset_eval = torch.utils.data.DataLoader(
                 dataset=args.config.evaluation_dataset,
                 batch_size=args.config.evaluation_dataset.batch_size,
@@ -147,8 +133,7 @@ def load_datasets(args):
                 worker_init_fn=getattr(args.config, "worker_init_fn", None),
                 persistent_workers=args.config.evaluation_dataset.persistent_workers,
             )
-            
-            # Loaded Print
+
             print_dataset(args, dataset_eval, "Evaluation")
                 
     else:
