@@ -41,13 +41,10 @@ class ContinueNetwork(nn.Module):
 
     def forward(self, x):
 
-        # MLP Layers
         x = self.mlp(x)
-
-        # Output Proj
         x = self.linear_proj(x)
 
-        # Normal Distribution
+        # Episode continuation probability
         value_dist = torch.distributions.Independent(distributions.Bernoulli(logits=x), 1)
 
         return value_dist

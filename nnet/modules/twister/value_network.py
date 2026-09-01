@@ -42,13 +42,10 @@ class ValueNetwork(nn.Module):
 
     def forward(self, x):
 
-        # MLP Layers
         x = self.mlp(x)
-
-        # Output Proj
         x = self.linear_proj(x)
 
-        # Discrete SymLog Distribution
+        # Twohot symlog bins
         value_dist = distributions.SymLogDiscreteDist(logits=x, reinterpreted_batch_ndims=1, low=-20, high=20)
 
         return value_dist

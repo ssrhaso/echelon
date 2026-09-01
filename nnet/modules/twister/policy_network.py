@@ -53,31 +53,23 @@ class PolicyNetwork(nn.Module):
 
     def forward(self, x):
 
-        # MLP Layers
         x = self.mlp(x)
 
         if self.discrete:
 
-            # Logits Projection
             logits = self.linear_proj(x)
-
-            # One Hot Distribution
             action_dist = distributions.OneHotDist(logits=logits, uniform_mix=self.uniform_mix, sampling_tmp=self.sampling_tmp)
 
             return action_dist
 
         else:
 
-            # Mean / Std Proj
             mean, std =  torch.chunk(self.linear_proj(x), chunks=2, dim=-1)
-
-            # Scale mean
             mean = F.tanh(mean)
 
-            # Born std to [self.min_std:self.max_std]
+            # Bound std to [min_std, max_std]
             std = (self.max_std - self.min_std) * F.sigmoid(std + 2.0) + self.min_std
 
-            # Normal Distribution
             action_dist = torch.distributions.Independent(distributions.Normal(mean, std), 1)
 
             return action_dist

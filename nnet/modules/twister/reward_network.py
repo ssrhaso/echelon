@@ -42,13 +42,10 @@ class RewardNetwork(nn.Module):
 
     def forward(self, x):
 
-        # MLP Layers
         x = self.mlp(x)
-
-        # Output Proj
         x = self.linear_proj(x)
 
-        # Discrete SymLog Distribution
+        # Twohot symlog bins
         reward_dist = distributions.SymLogDiscreteDist(logits=x, reinterpreted_batch_ndims=1, low=-20, high=20)
 
         return reward_dist
