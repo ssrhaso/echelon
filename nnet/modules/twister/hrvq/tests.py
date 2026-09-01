@@ -520,14 +520,13 @@ def test_12_world_model_forward():
 
 
 def test_13_predict_spatial_no_stoch_grad():
-    """Verify _predict_spatial uses non-differentiable codebook lookup.
+    """_predict_spatial builds stoch by a non-differentiable codebook lookup.
 
-    After reverting the straight-through estimator, stoch is produced by hard
-    Categorical sample + direct embedding indexing. Gradients should NOT flow
-    from stoch back through deter (this is correct - actor uses feats.detach()).
-    Gradients DO flow from logits through the dynamics predictor.
+    stoch comes from a hard Categorical sample and a direct embedding index, so
+    no gradient reaches deter through it. Gradients do flow from the logits back
+    through the dynamics predictor.
     """
-    print("TEST 13: _predict_spatial non-differentiable stoch (reverted ST)")
+    print("TEST 13: _predict_spatial non-differentiable stoch")
     encoder = SpatialHRVQEncoder()
     tssm = SpatialHRVQTSSM(
         num_actions=18, hidden_size=512, num_blocks=2, ff_ratio=2,
@@ -632,11 +631,9 @@ def test_16_encoder_drift_from_init():
     assert wm.infos["encoder_drift_from_init"] < 1e-6, \
         f"unchanged encoder should have ~0 drift, got {wm.infos['encoder_drift_from_init']}"
 
-    # Perturb encoder weights -> drift must become substantively positive.
-    # Use per-element random noise on ALL cnn params: a uniform additive/scale
-    # shift on an early conv is cancelled by the following LayerNorm
-    # (mean/var over channels), so a degenerate perturbation would falsely
-    # read ~0. Random noise is not LayerNorm-invariant.
+    # Perturb the encoder weights, drift must become clearly positive. The noise
+    # is per-element on every cnn param: a uniform additive or scale shift on an
+    # early conv is cancelled by the following LayerNorm and would read ~0.
     with torch.no_grad():
         for p in encoder.cnn.parameters():
             p.add_(0.5 * torch.randn_like(p))

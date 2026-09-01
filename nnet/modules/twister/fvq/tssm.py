@@ -56,7 +56,7 @@ class TSSM(nn.Module):
             # VQ dynamics
             num_codes: list = None,
             hrvq=None,
-            cond_proj_dim=None,     # unused in step 1, kept for signature compat
+            cond_proj_dim=None,     # unused, kept for interface compatibility
         ):
         super(TSSM, self).__init__()
 
