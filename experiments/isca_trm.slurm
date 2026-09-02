@@ -29,9 +29,14 @@ i=$SLURM_ARRAY_TASK_ID
 GAME=${GAMES[$((i/3))]}
 SEED=$((i%3))
 
-# Environment built by experiments/isca_setup.sh
-module load Anaconda3 2>/dev/null || true
-source activate "$HOME/echelon-env" 2>/dev/null || conda activate "$HOME/echelon-env"
+# Environment built by experiments/isca_setup.sh. Call its python directly and
+# fail loudly — the silent fallback to the system Anaconda is how job 2365050
+# died (activation "succeeds" even when the env is gutted).
+PY="$HOME/echelon-env/bin/python"
+if [ ! -x "$PY" ]; then
+    echo "ERROR: $PY missing — rebuild with experiments/isca_setup.sh" >&2
+    exit 1
+fi
 cd "$HOME/echelon"
 
 # float32 to match the completed scratch baselines (the atari100k default);
@@ -45,6 +50,6 @@ export WANDB_DIR="$TMPDIR"
 export PYTHONUNBUFFERED=1
 
 echo "=== array task $i | game=$GAME seed=$SEED core=trm | $(hostname) | $(nvidia-smi --query-gpu=name --format=csv,noheader) ==="
-python main.py --wandb --seed "$SEED" --eval_period_epoch 5 --keep_last_k 3 \
+"$PY" main.py --wandb --seed "$SEED" --eval_period_epoch 5 --keep_last_k 3 \
   --log_figure_period_epoch 9999 \
   --wandb_name "trm/${GAME}/seed${SEED}"
