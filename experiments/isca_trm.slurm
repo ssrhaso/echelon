@@ -1,8 +1,9 @@
 #!/bin/bash
 # SLURM job array: TRM recursive-dynamics pilot, 2 Atari100k games x 3 seeds.
-# Compares against the existing hrvq_baseline runs (isca_scratch.slurm), which
-# share every setting except dynamics_core. Tasks are game-major: game =
-# GAMES[i/3], seed = i%3.
+# Compares against the completed scratch baselines (runs_inventory.csv:
+# ms_pacman 6 seeds last5~823, breakout 6 seeds last5~37), which share every
+# setting except dynamics_core. Tasks are game-major: game = GAMES[i/3],
+# seed = i%3.
 #
 #   sbatch -A <account> experiments/isca_trm.slurm
 
@@ -22,7 +23,7 @@
 
 set -u
 
-GAMES=(boxing qbert)
+GAMES=(ms_pacman breakout)
 
 i=$SLURM_ARRAY_TASK_ID
 GAME=${GAMES[$((i/3))]}
@@ -33,8 +34,10 @@ module load Anaconda3 2>/dev/null || true
 source activate "$HOME/echelon-env" 2>/dev/null || conda activate "$HOME/echelon-env"
 cd "$HOME/echelon"
 
+# float32 to match the completed scratch baselines (the atari100k default);
+# mixing precision across a comparison is what invalidated the Ms Pac-Man ladder
 export env_name="atari100k-${GAME}" run_name=trm_dynamics
-export override_config='{"precision":"bfloat16","dynamics_core":"trm"}'
+export override_config='{"dynamics_core":"trm"}'
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Task-unique temp and wandb directories, so concurrent tasks stay isolated
 export TMPDIR="$HOME/tmp/${SLURM_JOB_ID}"; mkdir -p "$TMPDIR"
