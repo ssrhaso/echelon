@@ -27,6 +27,8 @@ from nnet import modules
 from nnet import distributions
 from nnet import structs
 
+from nnet.modules.twister.hrvq.recursive_dynamics import RecursiveDynamics
+
 
 class SpatialHRVQTSSM(nn.Module):
 
@@ -60,6 +62,14 @@ class SpatialHRVQTSSM(nn.Module):
             num_codes: list = None,
             hrvq=None,
             spatial_proj_dim=128,
+
+            # Dynamics core: "transformer" (block stack) or "trm" (recursive weight-shared)
+            dynamics_core="transformer",
+            trm_context_blocks=1,
+            trm_H_cycles=3,
+            trm_L_cycles=4,
+            trm_reason_layers=2,
+            trm_reason_ff_ratio=2,
         ):
         super(SpatialHRVQTSSM, self).__init__()
 
@@ -110,30 +120,46 @@ class SpatialHRVQTSSM(nn.Module):
         )
 
         # Transformer et -> dt, ht
-        self.transformer = modules.TransformerNetwork(
-            dim_model=self.hidden_size,
-            num_blocks=self.num_blocks,
-            att_params={
-                "class": "RelPosMultiHeadSelfAttention",
-                "params": {
-                    "num_heads": self.num_heads,
-                    "weight_init": "default",
-                    "bias_init": "default",
-                    "attn_drop_rate": self.drop_rate,
-                    "max_pos_encoding": self.max_pos_encoding,
-                    "causal": True
-                }
-            },
-            emb_drop_rate=0.0,
-            drop_rate=self.drop_rate,
-            pos_embedding=None,
-            mask=None,
-            ff_ratio=self.ff_ratio,
-            weight_init="default",
-            bias_init="default",
-            act_fun="ReLU",
-            module_pre_norm=module_pre_norm
-        )
+        if dynamics_core == "trm":
+            self.transformer = RecursiveDynamics(
+                dim_model=self.hidden_size,
+                num_heads=self.num_heads,
+                drop_rate=self.drop_rate,
+                max_pos_encoding=self.max_pos_encoding,
+                ff_ratio=self.ff_ratio,
+                module_pre_norm=module_pre_norm,
+                context_blocks=trm_context_blocks,
+                H_cycles=trm_H_cycles,
+                L_cycles=trm_L_cycles,
+                reason_layers=trm_reason_layers,
+                reason_ff_ratio=trm_reason_ff_ratio,
+            )
+        else:
+            assert dynamics_core == "transformer", "unknown dynamics_core: {}".format(dynamics_core)
+            self.transformer = modules.TransformerNetwork(
+                dim_model=self.hidden_size,
+                num_blocks=self.num_blocks,
+                att_params={
+                    "class": "RelPosMultiHeadSelfAttention",
+                    "params": {
+                        "num_heads": self.num_heads,
+                        "weight_init": "default",
+                        "bias_init": "default",
+                        "attn_drop_rate": self.drop_rate,
+                        "max_pos_encoding": self.max_pos_encoding,
+                        "causal": True
+                    }
+                },
+                emb_drop_rate=0.0,
+                drop_rate=self.drop_rate,
+                pos_embedding=None,
+                mask=None,
+                ff_ratio=self.ff_ratio,
+                weight_init="default",
+                bias_init="default",
+                act_fun="ReLU",
+                module_pre_norm=module_pre_norm
+            )
 
         # Spatial dynamics: deter(512) -> per-position features (16, spatial_proj_dim)
         self.spatial_proj = modules.Linear(

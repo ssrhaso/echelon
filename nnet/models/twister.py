@@ -167,6 +167,14 @@ class TWISTER(models.Model):
         self.config.ff_ratio_trans = model_params.ff_ratio_trans
         self.config.num_heads_trans = model_params.num_heads_trans
         self.config.drop_rate_trans = model_params.drop_rate_trans
+
+        # Dynamics core: "transformer" (block stack) or "trm" (recursive weight-shared)
+        self.config.dynamics_core = "transformer"
+        self.config.trm_context_blocks = 1
+        self.config.trm_H_cycles = 3
+        self.config.trm_L_cycles = 4
+        self.config.trm_reason_layers = 2
+        self.config.trm_reason_ff_ratio = 2
         self.config.encoder_cnn_norm = {"class": "LayerNorm", "params": {"eps": 1e-3, "convert_float32": True}}
         self.config.module_pre_norm = False
         self.config.detach_decoder = False
@@ -269,6 +277,12 @@ class TWISTER(models.Model):
             num_codes=self.config.hrvq_num_codes,
             hrvq=self.encoder_network.hrvq,
             spatial_proj_dim=self.config.hrvq_spatial_proj_dim,
+            dynamics_core=self.config.dynamics_core,
+            trm_context_blocks=self.config.trm_context_blocks,
+            trm_H_cycles=self.config.trm_H_cycles,
+            trm_L_cycles=self.config.trm_L_cycles,
+            trm_reason_layers=self.config.trm_reason_layers,
+            trm_reason_ff_ratio=self.config.trm_reason_ff_ratio,
         )
         self.policy_network = twister_networks.PolicyNetwork(
             num_actions=self.env.num_actions, 
